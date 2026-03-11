@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mi Cartera</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Inter',system-ui,sans-serif;background:#F8FAFC}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback} = React;
+const fmt  = (n,d=2) => new Intl.NumberFormat('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}).format(n);
+const fmtUSD = n => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n);
+const fmtDate = iso => new Date(iso).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+const pnlColor = v => v>=0?'#10B981':'#EF4444';
+const COLORS = ['#4F46E5','#7C3AED','#0891B2','#059669','#D97706','#DC2626','#EC4899','#0EA5E9'];
+
+const CARD = {background:'white',borderRadius:16,boxShadow:'0 1px 4px rgba(0,0,0,0.06)',border:'1px solid #F1F5F9',padding:20};
+const INPUT = {width:'100%',padding:'8px 10px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',fontFamily:'inherit'};
+const TH = {padding:'11px 14px',textAlign:'left',fontWeight:600,color:'#94A3B8',fontSize:11,textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap'};
+const TD = {padding:'11px 14px',fontSize:13,color:'#0F172A',borderTop:'1px solid #F1F5F9'};
+
+const store = {
+  get:(k)=>{try{return JSON.parse(localStorage.getItem(k));}catch{return null;}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+};
+
+/* ─── SVG Donut Chart ─── */
+function DonutChart({data}){
+  if(!data||data.length===0) return null;
+  const total = data.reduce((s,d)=>s+d.value,0);
+  if(total===0) return null;
+  const cx=100,cy=100,R=75,r=46;
+  const toRad = d=>(d-90)*Math.PI/180;
+  let angle=0;
+  const slices = data.map((d,i)=>{
+    const pct=d.value/total, start=angle;
+    angle+=pct*360;
+    return{...d,start,end:angle,color:COLORS[i%COLORS.length]};
+  });
+  const arc=(s,e)=>{
+    if(e-s>=360)e=359.999;
+    const a1=toRad(s),a2=toRad(e),lg=e-s>180?1:0;
+    const x1=cx+R*Math.cos(a1),y1=cy+R*Math.sin(a1);
+    const x2=cx+R*Math.cos(a2),y2=cy+R*Math.sin(a2);
+    const xi1=cx+r*Math.cos(a1),yi1=cy+r*Math.sin(a1);
+    const xi2=cx+r*Math.cos(a2),yi2=cy+r*Math.sin(a2);
+    return`M${x1} ${y1} A${R} ${R} 0 ${lg} 1 ${x2} ${y2} L${xi2} ${yi2} A${r} ${r} 0 ${lg} 0 ${xi1} ${yi1}Z`;
+  };
+  return(
+    <svg viewBox="0 0 200 200" width="180" height="180">
+      {slices.map((s,i)=><path key={i} d={arc(s.start,s.end)} fill={s.color} stroke="white" strokeWidth="2"/>)}
+    </svg>
+  );
+}
+
+/* ─── Settings Modal ─── */
+function SettingsModal({onClose}){
+  const [key,setKey] = useState(store.get('pf:apikey')||'');
+  const save=()=>{store.set('pf:apikey',key.trim());onClose();};
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
+      <div style={{...CARD,width:500,maxWidth:'92vw'}}>
+        <div style={{fontSize:15,fontWeight:600,color:'#0F172A',marginBottom:4}}>⚙️ Configuración</div>
+        <div style={{fontSize:13,color:'#64748B',marginBottom:16}}>
+          Los precios en tiempo real se obtienen usando la API de Anthropic + búsqueda web.
+          Ingresa tu clave para activarlos. Se guarda solo en tu navegador (localStorage).
+        </div>
+        <label style={{fontSize:11,color:'#64748B',display:'block',marginBottom:4,fontWeight:600,letterSpacing:'0.04em'}}>ANTHROPIC API KEY</label>
+        <input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder="sk-ant-api03-..." style={INPUT}/>
+        <div style={{fontSize:11,color:'#94A3B8',marginTop:6}}>
+          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" style={{color:'#4F46E5'}}>
+            Obtén tu clave en console.anthropic.com →
+          </a>
+        </div>
+        <div style={{display:'flex',gap:8,marginTop:16,justifyContent:'flex-end'}}>
+          <button onClick={onClose} style={{padding:'8px 16px',border:'1px solid #E2E8F0',borderRadius:8,background:'white',cursor:'pointer',fontSize:13,fontFamily:'inherit'}}>Cancelar</button>
+          <button onClick={save} style={{padding:'8px 16px',background:'#4F46E5',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:600,fontFamily:'inherit'}}>Guardar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main App ─── */
+function App(){
+  const [tab,setTab]   = useState('dashboard');
+  const [assets,setAssets]             = useState([]);
+  const [transactions,setTransactions] = useState([]);
+  const [prices,setPrices]             = useState({});
+  const [fetching,setFetching]         = useState(false);
+  const [lastUpdate,setLastUpdate]     = useState(null);
+  const [countdown,setCountdown]       = useState(60);
+  const [form,setForm]   = useState({symbol:'',name:'',assetType:'stock',quantity:'',price:'',action:'buy'});
+  const [formErr,setFormErr]           = useState('');
+  const [showSettings,setShowSettings] = useState(false);
+
+  /* load */
+  useEffect(()=>{
+    setAssets(store.get('pf:assets')||[]);
+    setTransactions(store.get('pf:transactions')||[]);
+    if(!store.get('pf:apikey')) setShowSettings(true);
+  },[]);
+
+  useEffect(()=>{ store.set('pf:assets',assets); },[assets]);
+  useEffect(()=>{ store.set('pf:transactions',transactions); },[transactions]);
+
+  /* fetch prices via Anthropic API + web search */
+  const fetchPrices = useCallback(async(currentAssets)=>{
+    const list = currentAssets??assets;
+    if(list.length===0) return;
+    const apiKey = store.get('pf:apikey');
+    if(!apiKey){ setShowSettings(true); return; }
+    setFetching(true); setCountdown(60);
+    try{
+      const symbols = [...new Set(list.map(a=>a.symbol))];
+      const res = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "x-api-key":apiKey,
+          "anthropic-version":"2023-06-01",
+          "anthropic-dangerous-direct-browser-access":"true"
+        },
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:1000,
+          tools:[{type:"web_search_20250305",name:"web_search"}],
+          system:"You are a financial data API. Respond ONLY with a raw JSON object — no markdown, no backticks, no explanation.",
+          messages:[{role:"user",content:
+            `Get current market prices for: ${symbols.join(', ')}.
+Return ONLY a JSON object like: {"BTC":{"price":45000.00,"change_pct":1.5},"AAPL":{"price":189.50,"change_pct":-0.3}}`
+          }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
+      const clean = text.replace(/```json|```/g,'').trim();
+      setPrices(JSON.parse(clean));
+      setLastUpdate(new Date());
+    }catch(e){ console.warn('Price fetch error',e); }
+    setFetching(false);
+  },[assets]);
+
+  useEffect(()=>{
+    fetchPrices();
+    const iv=setInterval(()=>fetchPrices(),60000);
+    return()=>clearInterval(iv);
+  },[fetchPrices]);
+
+  useEffect(()=>{
+    const iv=setInterval(()=>setCountdown(c=>c>0?c-1:60),1000);
+    return()=>clearInterval(iv);
+  },[]);
+
+  /* add transaction */
+  const handleAdd=()=>{
+    const {symbol,name,assetType,quantity,price,action}=form;
+    if(!symbol.trim()) return setFormErr('Ingresa un símbolo.');
+    if(!quantity||isNaN(+quantity)||+quantity<=0) return setFormErr('Cantidad inválida.');
+    if(!price||isNaN(+price)||+price<=0) return setFormErr('Precio inválido.');
+    setFormErr('');
+    const sym=symbol.toUpperCase().trim(), qty=parseFloat(quantity), prc=parseFloat(price);
+    const tx={id:Date.now(),symbol:sym,name:name||sym,assetType,action,quantity:qty,price:prc,date:new Date().toISOString()};
+    setTransactions(prev=>[tx,...prev]);
+    const updated=(()=>{
+      let prev=[...assets];
+      const ex=prev.find(a=>a.symbol===sym);
+      if(action==='buy'){
+        if(ex){const nq=ex.quantity+qty,na=(ex.avgPrice*ex.quantity+prc*qty)/nq;
+          return prev.map(a=>a.symbol===sym?{...a,quantity:nq,avgPrice:na,name:name||a.name}:a);}
+        return[...prev,{id:Date.now(),symbol:sym,name:name||sym,assetType,quantity:qty,avgPrice:prc}];
+      }else{
+        if(!ex) return prev;
+        const nq=ex.quantity-qty;
+        return nq<=0.0001?prev.filter(a=>a.symbol!==sym):prev.map(a=>a.symbol===sym?{...a,quantity:nq}:a);
+      }
+    })();
+    setAssets(updated);
+    setForm({symbol:'',name:'',assetType:'stock',quantity:'',price:'',action:'buy'});
+    setTimeout(()=>fetchPrices(updated),600);
+  };
+
+  const getP  = sym => prices[sym]?.price??null;
+  const getC  = sym => prices[sym]?.change_pct??null;
+  const getV  = a  => a.quantity*(getP(a.symbol)??a.avgPrice);
+  const totV  = assets.reduce((s,a)=>s+getV(a),0);
+  const totC  = assets.reduce((s,a)=>s+a.quantity*a.avgPrice,0);
+  const totPnL= totV-totC, totPnLPct=totC>0?(totPnL/totC)*100:0;
+  const dayChg= assets.reduce((s,a)=>{const c=getC(a.symbol);if(c==null)return s;return s+getV(a)*(c/(100+c));},0);
+  const pie   = assets.map(a=>({name:a.symbol,value:getV(a)}));
+
+  const TABS=[['dashboard','📊 Dashboard'],['assets','💼 Activos'],['transactions','🔄 Transacciones']];
+
+  return(
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:'#F8FAFC',minHeight:'100vh'}}>
+      {showSettings && <SettingsModal onClose={()=>setShowSettings(false)}/>}
+
+      {/* Header */}
+      <div style={{background:'white',borderBottom:'1px solid #F1F5F9',padding:'14px 24px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:38,height:38,background:'linear-gradient(135deg,#4F46E5,#7C3AED)',borderRadius:10,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>📈</div>
+          <div>
+            <div style={{fontSize:15,fontWeight:700,color:'#0F172A'}}>Mi Cartera</div>
+            <div style={{fontSize:11,color:'#94A3B8'}}>Investment Portfolio Manager</div>
+          </div>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:14}}>
+          <div style={{fontSize:11,color:'#94A3B8',textAlign:'right'}}>
+            {fetching?<span style={{color:'#4F46E5'}}>⟳ Actualizando…</span>
+              :lastUpdate?<>Actualizado {lastUpdate.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})} · próx. <b>{countdown}s</b></>
+              :<span style={{color:'#EF4444'}}>Sin API key</span>}
+          </div>
+          <button onClick={()=>setShowSettings(true)} style={{padding:'6px 12px',border:'1px solid #E2E8F0',borderRadius:8,background:'white',cursor:'pointer',fontSize:12,color:'#64748B',fontFamily:'inherit'}}>⚙️ Config</button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{background:'white',borderBottom:'1px solid #F1F5F9',padding:'0 24px',display:'flex'}}>
+        {TABS.map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)} style={{padding:'12px 20px',border:'none',borderBottom:tab===k?'2px solid #4F46E5':'2px solid transparent',background:'none',color:tab===k?'#4F46E5':'#64748B',fontWeight:tab===k?600:400,fontSize:13,cursor:'pointer',marginBottom:-1,fontFamily:'inherit'}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      <div style={{padding:24,maxWidth:1120,margin:'0 auto'}}>
+
+        {/* ── DASHBOARD ── */}
+        {tab==='dashboard'&&(
+          <div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16,marginBottom:20}}>
+              {[
+                ['VALOR TOTAL',fmtUSD(totV),`${assets.length} activo${assets.length!==1?'s':''}`,null],
+                ['P&L TOTAL',(totPnL>=0?'+':'')+fmtUSD(totPnL),(totPnLPct>=0?'+':'')+fmt(totPnLPct)+'%',totPnL],
+                ['CAMBIO HOY',(dayChg>=0?'+':'')+fmtUSD(dayChg),'Variación del día',dayChg],
+              ].map(([lbl,val,sub,pnl])=>(
+                <div key={lbl} style={CARD}>
+                  <div style={{fontSize:11,color:'#94A3B8',marginBottom:8,fontWeight:600,letterSpacing:'0.05em'}}>{lbl}</div>
+                  <div style={{fontSize:26,fontWeight:700,color:pnl!=null?pnlColor(pnl):'#0F172A',lineHeight:1}}>{val}</div>
+                  <div style={{fontSize:12,color:pnl!=null?pnlColor(pnl):'#94A3B8',marginTop:5}}>{sub}</div>
+                </div>
+              ))}
+            </div>
+            {assets.length===0?(
+              <div style={{...CARD,textAlign:'center',padding:60}}>
+                <div style={{fontSize:44}}>📭</div>
+                <div style={{color:'#64748B',marginTop:12}}>No tienes activos aún.</div>
+                <div style={{color:'#94A3B8',fontSize:13,marginTop:4}}>Ve a <b>Transacciones</b> para registrar tu primera compra.</div>
+              </div>
+            ):(
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+                <div style={CARD}>
+                  <div style={{fontSize:13,fontWeight:600,color:'#0F172A',marginBottom:12}}>Distribución del Portafolio</div>
+                  <div style={{display:'flex',justifyContent:'center'}}><DonutChart data={pie}/></div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:8,justifyContent:'center',marginTop:12}}>
+                    {pie.map((d,i)=>(
+                      <div key={i} style={{display:'flex',alignItems:'center',gap:4,fontSize:12,color:'#64748B'}}>
+                        <div style={{width:8,height:8,borderRadius:'50%',background:COLORS[i%COLORS.length]}}/>
+                        {d.name} ({totV>0?fmt(d.value/totV*100,1):0}%)
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={CARD}>
+                  <div style={{fontSize:13,fontWeight:600,color:'#0F172A',marginBottom:12}}>Posiciones</div>
+                  {[...assets].sort((a,b)=>getV(b)-getV(a)).map(a=>{
+                    const cp=getP(a.symbol), pp=cp?(cp-a.avgPrice)/a.avgPrice*100:0;
+                    return(
+                      <div key={a.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid #F8FAFC'}}>
+                        <div>
+                          <span style={{fontWeight:700,fontSize:13,color:'#4F46E5'}}>{a.symbol}</span>
+                          <span style={{fontSize:11,color:'#94A3B8',marginLeft:6}}>{a.name}</span>
+                        </div>
+                        <div style={{textAlign:'right'}}>
+                          <div style={{fontSize:13,fontWeight:600,color:'#0F172A'}}>{fmtUSD(getV(a))}</div>
+                          {cp&&<div style={{fontSize:11,color:pnlColor(pp)}}>{pp>=0?'+':''}{fmt(pp)}%</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── ACTIVOS ── */}
+        {tab==='assets'&&(
+          <div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+              <div style={{fontSize:15,fontWeight:600,color:'#0F172A'}}>Mis Activos</div>
+              <button onClick={()=>fetchPrices()} disabled={fetching} style={{padding:'8px 16px',background:'#4F46E5',color:'white',border:'none',borderRadius:8,fontSize:13,cursor:'pointer',fontWeight:500,opacity:fetching?0.6:1,fontFamily:'inherit'}}>
+                {fetching?'⟳ Actualizando…':'↻ Actualizar precios'}
+              </button>
+            </div>
+            {assets.length===0?(
+              <div style={{...CARD,textAlign:'center',padding:60}}>
+                <div style={{fontSize:44}}>📭</div>
+                <div style={{color:'#64748B',marginTop:12}}>Sin activos registrados.</div>
+              </div>
+            ):(
+              <div style={{...CARD,padding:0,overflow:'hidden'}}>
+                <div style={{overflowX:'auto'}}>
+                  <table style={{width:'100%',borderCollapse:'collapse'}}>
+                    <thead>
+                      <tr style={{background:'#F8FAFC'}}>
+                        {['Símbolo','Nombre','Tipo','Cantidad','Precio Prom.','Precio Actual','Valor','P&L $','P&L %'].map(h=>(
+                          <th key={h} style={TH}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assets.map((a,i)=>{
+                        const cp=getP(a.symbol), val=getV(a), cost=a.quantity*a.avgPrice;
+                        const pnl=val-cost, pp=cost>0?(pnl/cost)*100:0, chg=getC(a.symbol);
+                        return(
+                          <tr key={a.id} style={{background:i%2===0?'white':'#FAFAFA'}}>
+                            <td style={{...TD,fontWeight:700,color:'#4F46E5'}}>{a.symbol}</td>
+                            <td style={{...TD,color:'#64748B'}}>{a.name}</td>
+                            <td style={TD}><span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#EEF2FF',color:'#4F46E5'}}>{a.assetType}</span></td>
+                            <td style={TD}>{fmt(a.quantity,4)}</td>
+                            <td style={TD}>{fmtUSD(a.avgPrice)}</td>
+                            <td style={TD}>
+                              {cp?fmtUSD(cp):<span style={{color:'#CBD5E1'}}>—</span>}
+                              {chg!=null&&<span style={{fontSize:11,color:pnlColor(chg),marginLeft:4}}>({chg>=0?'+':''}{fmt(chg)}%)</span>}
+                            </td>
+                            <td style={{...TD,fontWeight:600}}>{fmtUSD(val)}</td>
+                            <td style={{...TD,fontWeight:600,color:pnlColor(pnl)}}>{pnl>=0?'+':''}{fmtUSD(pnl)}</td>
+                            <td style={{...TD,fontWeight:600,color:pnlColor(pp)}}>{pp>=0?'+':''}{fmt(pp)}%</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── TRANSACCIONES ── */}
+        {tab==='transactions'&&(
+          <div>
+            <div style={{...CARD,marginBottom:20}}>
+              <div style={{fontSize:14,fontWeight:600,color:'#0F172A',marginBottom:16}}>Registrar Operación</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:12}}>
+                {[
+                  ['ACCIÓN','action','select',null,[['buy','🟢 Compra'],['sell','🔴 Venta']]],
+                  ['TIPO','assetType','select',null,[['stock','Acción'],['crypto','Cripto'],['etf','ETF'],['bond','Bono']]],
+                  ['SÍMBOLO','symbol','text','AAPL / BTC',null],
+                  ['NOMBRE','name','text','Apple Inc.',null],
+                  ['CANTIDAD','quantity','number','10',null],
+                  ['PRECIO (USD)','price','number','150.00',null],
+                ].map(([lbl,key,type,ph,opts])=>(
+                  <div key={key}>
+                    <label style={{fontSize:11,color:'#64748B',display:'block',marginBottom:4,fontWeight:600,letterSpacing:'0.04em'}}>{lbl}</label>
+                    {type==='select'
+                      ?<select value={form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} style={{...INPUT,background:'white'}}>
+                          {opts.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                        </select>
+                      :<input type={type} value={form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} placeholder={ph} style={INPUT}/>
+                    }
+                  </div>
+                ))}
+              </div>
+              {formErr&&<div style={{color:'#EF4444',fontSize:12,marginTop:10}}>{formErr}</div>}
+              <button onClick={handleAdd} style={{marginTop:14,padding:'10px 24px',background:'#4F46E5',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+                + Registrar
+              </button>
+            </div>
+            <div style={{fontSize:14,fontWeight:600,color:'#0F172A',marginBottom:12}}>Historial ({transactions.length})</div>
+            {transactions.length===0?(
+              <div style={{...CARD,textAlign:'center',padding:50}}>
+                <div style={{fontSize:40}}>📋</div>
+                <div style={{color:'#64748B',marginTop:12}}>Sin transacciones aún.</div>
+              </div>
+            ):(
+              <div style={{...CARD,padding:0,overflow:'hidden'}}>
+                <div style={{overflowX:'auto'}}>
+                  <table style={{width:'100%',borderCollapse:'collapse'}}>
+                    <thead>
+                      <tr style={{background:'#F8FAFC'}}>
+                        {['Fecha','Tipo','Acción','Símbolo','Nombre','Cantidad','Precio','Total'].map(h=>(
+                          <th key={h} style={TH}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.map((tx,i)=>(
+                        <tr key={tx.id} style={{background:i%2===0?'white':'#FAFAFA'}}>
+                          <td style={{...TD,color:'#94A3B8',fontSize:12,whiteSpace:'nowrap'}}>{fmtDate(tx.date)}</td>
+                          <td style={TD}><span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#EEF2FF',color:'#4F46E5'}}>{tx.assetType}</span></td>
+                          <td style={TD}>
+                            <span style={{fontSize:11,padding:'3px 10px',borderRadius:20,fontWeight:600,...(tx.action==='buy'?{background:'#ECFDF5',color:'#059669'}:{background:'#FEF2F2',color:'#DC2626'})}}>
+                              {tx.action==='buy'?'▲ COMPRA':'▼ VENTA'}
+                            </span>
+                          </td>
+                          <td style={{...TD,fontWeight:700,color:'#4F46E5'}}>{tx.symbol}</td>
+                          <td style={{...TD,color:'#64748B'}}>{tx.name}</td>
+                          <td style={TD}>{fmt(tx.quantity,4)}</td>
+                          <td style={TD}>{fmtUSD(tx.price)}</td>
+                          <td style={{...TD,fontWeight:600}}>{fmtUSD(tx.quantity*tx.price)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
