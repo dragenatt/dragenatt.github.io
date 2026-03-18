@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mi Cartera Pro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:#F8FAFC}
+a{text-decoration:none;color:inherit}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:#E2E8F0;border-radius:4px}
+input[type=range]{accent-color:#4F46E5}
+.asset-option:hover{background:#F1F5F9}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback,useRef,useMemo}=React;
+
+/* ── Utils ── */
+const fmt    =(n,d=2)=>isNaN(n)?'—':new Intl.NumberFormat('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}).format(n);
+const fmtUSD =n=>isNaN(n)?'—':new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n);
+const fmtK   =n=>{if(isNaN(n))return'—';if(n>=1e12)return fmt(n/1e12,2)+'T';if(n>=1e9)return fmt(n/1e9,2)+'B';if(n>=1e6)return fmt(n/1e6,2)+'M';return fmtUSD(n);};
+const fmtDate=iso=>{try{return new Date(iso).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});}catch{return iso;}};
+const fmtTime=d=>{try{return d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});}catch{return'';}};
+const green='#10B981',red='#EF4444';
+const pc=v=>v>=0?green:red;
+const COLORS=['#4F46E5','#7C3AED','#0891B2','#059669','#D97706','#DC2626','#EC4899','#0EA5E9','#84CC16','#F59E0B'];
+
+/* ── Styles ── */
+const CARD={background:'white',borderRadius:16,boxShadow:'0 1px 4px rgba(0,0,0,0.06)',border:'1px solid #F1F5F9',padding:20};
+const INP={width:'100%',padding:'8px 10px',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',fontFamily:'inherit',background:'white'};
+const TH={padding:'10px 14px',textAlign:'left',fontWeight:600,color:'#94A3B8',fontSize:11,textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap'};
+const TD={padding:'10px 14px',fontSize:13,color:'#0F172A',borderTop:'1px solid #F1F5F9'};
+const BTN=(bg='#4F46E5',sm=false)=>({padding:sm?'6px 12px':'9px 18px',background:bg,color:bg==='white'?'#64748B':'white',border:bg==='white'?'1px solid #E2E8F0':'none',borderRadius:8,fontSize:sm?12:13,cursor:'pointer',fontWeight:500,fontFamily:'inherit'});
+const LBL={fontSize:10,color:'#64748B',display:'block',marginBottom:4,fontWeight:600,letterSpacing:'0.05em'};
+
+/* ── localStorage ── */
+const store={
+  get:k=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+};
+
+/* ══════════════════════════════════════════
+   ASSET DATABASE — símbolo, nombre, tipo, sector
+══════════════════════════════════════════ */
+const ASSET_DB=[
+  /* ── Acciones EE.UU. ── */
+  {s:'AAPL',n:'Apple Inc.',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'MSFT',n:'Microsoft Corporation',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'NVDA',n:'NVIDIA Corporation',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'GOOGL',n:'Alphabet (Google) Clase A',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'GOOG',n:'Alphabet (Google) Clase C',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'META',n:'Meta Platforms (Facebook)',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'AMZN',n:'Amazon.com Inc.',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'TSLA',n:'Tesla Inc.',t:'stock',cat:'🇺🇸 Automóviles'},
+  {s:'AVGO',n:'Broadcom Inc.',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'ORCL',n:'Oracle Corporation',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'AMD',n:'Advanced Micro Devices',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'INTC',n:'Intel Corporation',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'QCOM',n:'Qualcomm Inc.',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'CRM',n:'Salesforce Inc.',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'ADBE',n:'Adobe Inc.',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'NFLX',n:'Netflix Inc.',t:'stock',cat:'🇺🇸 Entretenimiento'},
+  {s:'DIS',n:'The Walt Disney Company',t:'stock',cat:'🇺🇸 Entretenimiento'},
+  {s:'SPOT',n:'Spotify Technology',t:'stock',cat:'🇺🇸 Entretenimiento'},
+  {s:'PYPL',n:'PayPal Holdings',t:'stock',cat:'🇺🇸 Fintech'},
+  {s:'SQ',n:'Block Inc. (Square)',t:'stock',cat:'🇺🇸 Fintech'},
+  {s:'COIN',n:'Coinbase Global',t:'stock',cat:'🇺🇸 Fintech'},
+  {s:'V',n:'Visa Inc.',t:'stock',cat:'🇺🇸 Finanzas'},
+  {s:'MA',n:'Mastercard Inc.',t:'stock',cat:'🇺🇸 Finanzas'},
+  {s:'JPM',n:'JPMorgan Chase & Co.',t:'stock',cat:'🇺🇸 Finanzas'},
+  {s:'BAC',n:'Bank of America Corp.',t:'stock',cat:'🇺🇸 Finanzas'},
+  {s:'GS',n:'Goldman Sachs Group',t:'stock',cat:'🇺🇸 Finanzas'},
+  {s:'WFC',n:'Wells Fargo & Company',t:'stock',cat:'🇺🇸 Finanzas'},
+  {s:'BRK-B',n:'Berkshire Hathaway Clase B',t:'stock',cat:'🇺🇸 Finanzas'},
+  {s:'JNJ',n:'Johnson & Johnson',t:'stock',cat:'🇺🇸 Salud'},
+  {s:'UNH',n:'UnitedHealth Group',t:'stock',cat:'🇺🇸 Salud'},
+  {s:'PFE',n:'Pfizer Inc.',t:'stock',cat:'🇺🇸 Salud'},
+  {s:'MRNA',n:'Moderna Inc.',t:'stock',cat:'🇺🇸 Salud'},
+  {s:'ABBV',n:'AbbVie Inc.',t:'stock',cat:'🇺🇸 Salud'},
+  {s:'LLY',n:'Eli Lilly and Company',t:'stock',cat:'🇺🇸 Salud'},
+  {s:'XOM',n:'Exxon Mobil Corporation',t:'stock',cat:'🇺🇸 Energía'},
+  {s:'CVX',n:'Chevron Corporation',t:'stock',cat:'🇺🇸 Energía'},
+  {s:'WMT',n:'Walmart Inc.',t:'stock',cat:'🇺🇸 Consumo'},
+  {s:'COST',n:'Costco Wholesale',t:'stock',cat:'🇺🇸 Consumo'},
+  {s:'KO',n:'The Coca-Cola Company',t:'stock',cat:'🇺🇸 Consumo'},
+  {s:'PEP',n:'PepsiCo Inc.',t:'stock',cat:'🇺🇸 Consumo'},
+  {s:'MCD',n:"McDonald's Corporation",t:'stock',cat:'🇺🇸 Consumo'},
+  {s:'SBUX',n:'Starbucks Corporation',t:'stock',cat:'🇺🇸 Consumo'},
+  {s:'NKE',n:'Nike Inc.',t:'stock',cat:'🇺🇸 Consumo'},
+  {s:'F',n:'Ford Motor Company',t:'stock',cat:'🇺🇸 Automóviles'},
+  {s:'GM',n:'General Motors Company',t:'stock',cat:'🇺🇸 Automóviles'},
+  {s:'BA',n:'Boeing Company',t:'stock',cat:'🇺🇸 Industrial'},
+  {s:'CAT',n:'Caterpillar Inc.',t:'stock',cat:'🇺🇸 Industrial'},
+  {s:'GE',n:'GE Aerospace',t:'stock',cat:'🇺🇸 Industrial'},
+  {s:'UBER',n:'Uber Technologies',t:'stock',cat:'🇺🇸 Transporte'},
+  {s:'LYFT',n:'Lyft Inc.',t:'stock',cat:'🇺🇸 Transporte'},
+  {s:'ABNB',n:'Airbnb Inc.',t:'stock',cat:'🇺🇸 Turismo'},
+  {s:'BKNG',n:'Booking Holdings',t:'stock',cat:'🇺🇸 Turismo'},
+  {s:'HOOD',n:'Robinhood Markets',t:'stock',cat:'🇺🇸 Fintech'},
+  {s:'PLTR',n:'Palantir Technologies',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'AI',n:'C3.ai Inc.',t:'stock',cat:'🇺🇸 IA'},
+  {s:'SMCI',n:'Super Micro Computer',t:'stock',cat:'🇺🇸 Tecnología'},
+  {s:'ARM',n:'Arm Holdings',t:'stock',cat:'🇺🇸 Tecnología'},
+  /* ── Acciones internacionales ── */
+  {s:'TSM',n:'TSMC — Taiwan Semiconductor',t:'stock',cat:'🌏 Internacional'},
+  {s:'BABA',n:'Alibaba Group',t:'stock',cat:'🌏 Internacional'},
+  {s:'NIO',n:'NIO Inc. (vehículos EV China)',t:'stock',cat:'🌏 Internacional'},
+  {s:'SHOP',n:'Shopify Inc.',t:'stock',cat:'🇨🇦 Internacional'},
+  {s:'SAP',n:'SAP SE',t:'stock',cat:'🇩🇪 Internacional'},
+  {s:'ASML',n:'ASML Holding',t:'stock',cat:'🇳🇱 Internacional'},
+  {s:'SONY',n:'Sony Group Corporation',t:'stock',cat:'🇯🇵 Internacional'},
+  {s:'TM',n:'Toyota Motor Corporation',t:'stock',cat:'🇯🇵 Internacional'},
+  /* ── ETFs ── */
+  {s:'SPY',n:'S&P 500 ETF (SPDR)',t:'etf',cat:'📦 ETF — Índices'},
+  {s:'QQQ',n:'Nasdaq-100 ETF (Invesco)',t:'etf',cat:'📦 ETF — Índices'},
+  {s:'VTI',n:'Total Stock Market ETF (Vanguard)',t:'etf',cat:'📦 ETF — Índices'},
+  {s:'VOO',n:'S&P 500 ETF (Vanguard)',t:'etf',cat:'📦 ETF — Índices'},
+  {s:'IWM',n:'Russell 2000 ETF (iShares)',t:'etf',cat:'📦 ETF — Índices'},
+  {s:'DIA',n:'Dow Jones ETF (SPDR)',t:'etf',cat:'📦 ETF — Índices'},
+  {s:'VGT',n:'Information Technology ETF (Vanguard)',t:'etf',cat:'📦 ETF — Sectorial'},
+  {s:'XLK',n:'Technology Select Sector SPDR',t:'etf',cat:'📦 ETF — Sectorial'},
+  {s:'XLF',n:'Financial Select Sector SPDR',t:'etf',cat:'📦 ETF — Sectorial'},
+  {s:'XLE',n:'Energy Select Sector SPDR',t:'etf',cat:'📦 ETF — Sectorial'},
+  {s:'XLV',n:'Health Care Select Sector SPDR',t:'etf',cat:'📦 ETF — Sectorial'},
+  {s:'ARKK',n:'ARK Innovation ETF (Cathie Wood)',t:'etf',cat:'📦 ETF — Innovación'},
+  {s:'ARKG',n:'ARK Genomic Revolution ETF',t:'etf',cat:'📦 ETF — Innovación'},
+  {s:'GLD',n:'Gold ETF (SPDR)',t:'etf',cat:'📦 ETF — Commodities'},
+  {s:'SLV',n:'Silver ETF (iShares)',t:'etf',cat:'📦 ETF — Commodities'},
+  {s:'USO',n:'Oil Fund ETF (United States)',t:'etf',cat:'📦 ETF — Commodities'},
+  {s:'VNQ',n:'Real Estate ETF (Vanguard)',t:'etf',cat:'📦 ETF — Inmobiliario'},
+  {s:'EEM',n:'Emerging Markets ETF (iShares)',t:'etf',cat:'📦 ETF — Emergentes'},
+  {s:'EWZ',n:'Brazil ETF (iShares)',t:'etf',cat:'📦 ETF — Emergentes'},
+  {s:'MCHI',n:'China ETF (iShares)',t:'etf',cat:'📦 ETF — Emergentes'},
+  {s:'BITO',n:'Bitcoin Strategy ETF (ProShares)',t:'etf',cat:'📦 ETF — Crypto'},
+  {s:'AGG',n:'US Aggregate Bond ETF (iShares)',t:'etf',cat:'📦 ETF — Bonos'},
+  {s:'TLT',n:'20+ Year Treasury Bond ETF',t:'etf',cat:'📦 ETF — Bonos'},
+  {s:'BND',n:'Total Bond Market ETF (Vanguard)',t:'etf',cat:'📦 ETF — Bonos'},
+  /* ── México ── */
+  {s:'AMXL.MX',n:'América Móvil (BMV)',t:'stock',cat:'🇲🇽 México'},
+  {s:'WALMEX.MX',n:'Walmart de México (BMV)',t:'stock',cat:'🇲🇽 México'},
+  {s:'FEMSAUBD.MX',n:'FEMSA (BMV)',t:'stock',cat:'🇲🇽 México'},
+  {s:'GFNORTEO.MX',n:'Banorte (BMV)',t:'stock',cat:'🇲🇽 México'},
+  {s:'BIMBOA.MX',n:'Grupo Bimbo (BMV)',t:'stock',cat:'🇲🇽 México'},
+  {s:'CEMEXCPO.MX',n:'CEMEX (BMV)',t:'stock',cat:'🇲🇽 México'},
+  {s:'TLEVISACPO.MX',n:'Televisa (BMV)',t:'stock',cat:'🇲🇽 México'},
+  {s:'ALSEA.MX',n:'Alsea (BMV)',t:'stock',cat:'🇲🇽 México'},
+  {s:'GENTERA.MX',n:'Gentera (BMV)',t:'stock',cat:'🇲🇽 México'},
+  /* ── Cripto ── */
+  {s:'BTC',n:'Bitcoin',t:'crypto',cat:'₿ Cripto — Capa 1'},
+  {s:'ETH',n:'Ethereum',t:'crypto',cat:'₿ Cripto — Capa 1'},
+  {s:'SOL',n:'Solana',t:'crypto',cat:'₿ Cripto — Capa 1'},
+  {s:'BNB',n:'BNB (Binance Coin)',t:'crypto',cat:'₿ Cripto — Exchange'},
+  {s:'XRP',n:'XRP (Ripple)',t:'crypto',cat:'₿ Cripto — Pagos'},
+  {s:'ADA',n:'Cardano',t:'crypto',cat:'₿ Cripto — Capa 1'},
+  {s:'DOGE',n:'Dogecoin',t:'crypto',cat:'₿ Cripto — Meme'},
+  {s:'SHIB',n:'Shiba Inu',t:'crypto',cat:'₿ Cripto — Meme'},
+  {s:'PEPE',n:'Pepe Coin',t:'crypto',cat:'₿ Cripto — Meme'},
+  {s:'WIF',n:'dogwifhat',t:'crypto',cat:'₿ Cripto — Meme'},
+  {s:'AVAX',n:'Avalanche',t:'crypto',cat:'₿ Cripto — Capa 1'},
+  {s:'DOT',n:'Polkadot',t:'crypto',cat:'₿ Cripto — Capa 0'},
+  {s:'MATIC',n:'Polygon (MATIC)',t:'crypto',cat:'₿ Cripto — Capa 2'},
+  {s:'LINK',n:'Chainlink',t:'crypto',cat:'₿ Cripto — Oráculos'},
+  {s:'UNI',n:'Uniswap',t:'crypto',cat:'₿ Cripto — DeFi'},
+  {s:'AAVE',n:'Aave Protocol',t:'crypto',cat:'₿ Cripto — DeFi'},
+  {s:'ARB',n:'Arbitrum',t:'crypto',cat:'₿ Cripto — Capa 2'},
+  {s:'OP',n:'Optimism',t:'crypto',cat:'₿ Cripto — Capa 2'},
+  {s:'LTC',n:'Litecoin',t:'crypto',cat:'₿ Cripto — Pagos'},
+  {s:'ATOM',n:'Cosmos',t:'crypto',cat:'₿ Cripto — Interoperabilidad'},
+  {s:'NEAR',n:'NEAR Protocol',t:'crypto',cat:'₿ Cripto — Capa 1'},
+  {s:'APT',n:'Aptos',t:'crypto',cat:'₿ Cripto — Capa 1'},
+  {s:'SUI',n:'Sui Network',t:'crypto',cat:'₿ Cripto — Capa 1'},
+  {s:'TRX',n:'TRON',t:'crypto',cat:'₿ Cripto — Capa 1'},
+  {s:'INJ',n:'Injective Protocol',t:'crypto',cat:'₿ Cripto — DeFi'},
+  {s:'FIL',n:'Filecoin',t:'crypto',cat:'₿ Cripto — Almacenamiento'},
+  {s:'RENDER',n:'Render Network',t:'crypto',cat:'₿ Cripto — IA/GPU'},
+];
+
+const CG_IDS={BTC:'bitcoin',ETH:'ethereum',SOL:'solana',BNB:'binancecoin',XRP:'ripple',ADA:'cardano',
+  DOGE:'dogecoin',SHIB:'shiba-inu',PEPE:'pepe',WIF:'dogwifcoin',AVAX:'avalanche-2',DOT:'polkadot',
+  MATIC:'matic-network',LINK:'chainlink',UNI:'uniswap',AAVE:'aave',ARB:'arbitrum',OP:'optimism',
+  LTC:'litecoin',ATOM:'cosmos',NEAR:'near',APT:'aptos',SUI:'sui',TRX:'tron',INJ:'injective-protocol',
+  FIL:'filecoin',RENDER:'render-token'};
+
+/* ── AssetSearch Component ── */
+function AssetSearch({onSelect}){
+  const[q,setQ]=useState('');
+  const[open,setOpen]=useState(false);
+  const ref=useRef();
+
+  const results=useMemo(()=>{
+    if(!q.trim())return[];
+    const lq=q.toLowerCase();
+    return ASSET_DB.filter(a=>a.s.toLowerCase().includes(lq)||a.n.toLowerCase().includes(lq)||a.cat.toLowerCase().includes(lq)).slice(0,10);
+  },[q]);
+
+  useEffect(()=>{
+    const handler=e=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);};
+    document.addEventListener('mousedown',handler);return()=>document.removeEventListener('mousedown',handler);
+  },[]);
+
+  const pick=a=>{onSelect(a);setQ('');setOpen(false);};
+
+  return(
+    <div ref={ref} style={{position:'relative'}}>
+      <label style={LBL}>BUSCAR ACTIVO</label>
+      <input value={q} onChange={e=>{setQ(e.target.value);setOpen(true);}} onFocus={()=>setOpen(true)}
+        placeholder="🔍  Apple, Bitcoin, SPY, TSLA…" style={{...INP,paddingLeft:10}}/>
+      {open&&results.length>0&&(
+        <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid #E2E8F0',borderRadius:10,zIndex:999,boxShadow:'0 8px 24px rgba(0,0,0,0.10)',maxHeight:310,overflowY:'auto',marginTop:2}}>
+          {results.map(a=>(
+            <div key={a.s} className="asset-option" onClick={()=>pick(a)}
+              style={{padding:'9px 14px',cursor:'pointer',borderBottom:'1px solid #F8FAFC',display:'flex',alignItems:'center',gap:10}}>
+              <div style={{width:38,height:38,borderRadius:10,background:a.t==='crypto'?'#FEF3C7':a.t==='etf'?'#EDE9FE':'#EFF6FF',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                <span style={{fontSize:13,fontWeight:800,color:a.t==='crypto'?'#D97706':a.t==='etf'?'#7C3AED':'#2563EB'}}>{a.s.split('.')[0].slice(0,4)}</span>
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600,color:'#0F172A'}}>{a.s} <span style={{fontWeight:400,color:'#64748B'}}>— {a.n}</span></div>
+                <div style={{fontSize:11,color:'#94A3B8',marginTop:1}}>{a.cat}</div>
+              </div>
+              <span style={{fontSize:11,padding:'2px 8px',borderRadius:12,flexShrink:0,
+                background:a.t==='crypto'?'#FEF3C7':a.t==='etf'?'#EDE9FE':'#EFF6FF',
+                color:a.t==='crypto'?'#D97706':a.t==='etf'?'#7C3AED':'#2563EB',fontWeight:600}}>
+                {a.t==='crypto'?'Cripto':a.t==='etf'?'ETF':'Acción'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {open&&q.length>1&&results.length===0&&(
+        <div style={{position:'absolute',top:'100%',left:0,right:0,background:'white',border:'1px solid #E2E8F0',borderRadius:10,zIndex:999,boxShadow:'0 8px 24px rgba(0,0,0,0.10)',padding:'16px',textAlign:'center',fontSize:13,color:'#94A3B8',marginTop:2}}>
+          Sin resultados para "<b>{q}</b>" — puedes ingresarlo manualmente abajo.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Proxy fetch chains ── */
+const YF_PROXIES=[
+  sym=>`https://corsproxy.io/?${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`)}`,
+  sym=>`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`)}`,
+];
+
+async function fetchYahoo(sym){
+  for(const mk of YF_PROXIES){
+    try{
+      const r=await fetch(mk(sym),{signal:AbortSignal.timeout(7000)});
+      if(!r.ok)continue;
+      const d=await r.json();
+      const q=d?.chart?.result?.[0];
+      if(!q)continue;
+      const price=q.meta?.regularMarketPrice,prev=q.meta?.chartPreviousClose;
+      if(price&&price>0)return{price,change_pct:prev&&prev>0?((price-prev)/prev)*100:0};
+    }catch{}
+  }
+  return null;
+}
+
+async function fetchCoinGecko(ids){
+  try{
+    const r=await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`,{signal:AbortSignal.timeout(8000)});
+    if(!r.ok)throw new Error();
+    return await r.json();
+  }catch{return{};}
+}
+
+async function fetchAllPrices(assets){
+  const result={};
+  if(!assets?.length)return result;
+  const cryptos=assets.filter(a=>CG_IDS[a.symbol]||a.assetType==='crypto');
+  const stocks=assets.filter(a=>!CG_IDS[a.symbol]&&a.assetType!=='crypto');
+  if(cryptos.length){
+    const ids=[...new Set(cryptos.map(a=>CG_IDS[a.symbol]||a.symbol.toLowerCase()))].join(',');
+    const data=await fetchCoinGecko(ids);
+    cryptos.forEach(a=>{const id=CG_IDS[a.symbol]||a.symbol.toLowerCase(),row=data[id];if(row?.usd)result[a.symbol]={price:row.usd,change_pct:row.usd_24h_change??0,mktcap:row.usd_market_cap??null};});
+  }
+  if(stocks.length){
+    const syms=[...new Set(stocks.map(a=>a.symbol))];
+    await Promise.allSettled(syms.map(async sym=>{const r=await fetchYahoo(sym);if(r)result[sym]=r;}));
+  }
+  return result;
+}
+
+async function loadNews(){
+  const feeds=['https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US','https://finance.yahoo.com/news/rssindex'];
+  for(const feed of feeds){
+    try{const r=await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed)}&count=24`,{signal:AbortSignal.timeout(8000)});const d=await r.json();if(d.items?.length)return d.items;}catch{}
+  }
+  return[];
+}
+
+/* ── Monte Carlo ── */
+function randn(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+function runMC({S0,mu,sigma,T,N}){
+  if(S0<=0||sigma<=0||T<=0||N<=0)return null;
+  const dt=1/252,drift=(mu-sigma*sigma/2)*dt,vol=sigma*Math.sqrt(dt);
+  const paths=[];
+  for(let i=0;i<N;i++){const p=new Float64Array(T+1);p[0]=S0;for(let t=1;t<=T;t++)p[t]=p[t-1]*Math.exp(drift+vol*randn());paths.push(p);}
+  const nPts=Math.min(T,80),step=T/nPts;
+  const cps=Array.from({length:nPts+1},(_,i)=>Math.min(T,Math.round(i*step)));
+  const pct=(arr,p)=>{const s=[...arr].sort((a,b)=>a-b),idx=(p/100)*(s.length-1),lo=Math.floor(idx),hi=Math.ceil(idx);return+(s[lo]+(s[hi]-s[lo])*(idx-lo)).toFixed(4);};
+  const bands=cps.map(t=>{const v=paths.map(p=>p[t]);return{t,p5:pct(v,5),p25:pct(v,25),p50:pct(v,50),p75:pct(v,75),p95:pct(v,95)};});
+  const finals=paths.map(p=>p[T]),p5f=pct(finals,5),p50f=pct(finals,50),p95f=pct(finals,95);
+  const tail=finals.filter(v=>v<p5f);
+  return{bands,p5:p5f,p50:p50f,p95:p95f,probGain:finals.filter(v=>v>S0).length/N*100,VaR95:S0-p5f,CVaR95:S0-(tail.length?tail.reduce((s,v)=>s+v,0)/tail.length:p5f),retEsp:(p50f-S0)/S0*100};
+}
+
+function exportCSV(rows,fname){
+  if(!rows?.length)return;
+  const keys=Object.keys(rows[0]);
+  const csv=[keys.join(','),...rows.map(r=>keys.map(k=>`"${String(r[k]).replace(/"/g,'""')}"`).join(','))].join('\n');
+  Object.assign(document.createElement('a'),{href:'data:text/csv;charset=utf-8,'+encodeURIComponent(csv),download:fname}).click();
+}
+
+/* ── Donut SVG ── */
+function Donut({data,total}){
+  if(!data?.length||!total)return null;
+  const cx=100,cy=100,R=80,r=52,rad=d=>(d-90)*Math.PI/180;let angle=0;
+  const sl=data.map((d,i)=>{const s=angle;angle+=d.value/total*360;return{...d,s,e:angle,c:COLORS[i%COLORS.length]};});
+  const arc=(s,e)=>{if(e-s>=360)e=359.9999;const[a1,a2]=[rad(s),rad(e)],lg=e-s>180?1:0;return`M${cx+R*Math.cos(a1)} ${cy+R*Math.sin(a1)}A${R} ${R} 0 ${lg} 1 ${cx+R*Math.cos(a2)} ${cy+R*Math.sin(a2)}L${cx+r*Math.cos(a2)} ${cy+r*Math.sin(a2)}A${r} ${r} 0 ${lg} 0 ${cx+r*Math.cos(a1)} ${cy+r*Math.sin(a1)}Z`;};
+  return(<svg viewBox="0 0 200 200" width={190} height={190}>{sl.map((s,i)=><path key={i} d={arc(s.s,s.e)} fill={s.c} stroke="white" strokeWidth={2}/>)}</svg>);
+}
+
+/* ── MC Chart SVG ── */
+function MCChart({result,S0}){
+  if(!result?.bands||result.bands.length<2)return null;
+  const W=580,H=270,PL=76,PR=30,PT=16,PB=40;
+  const{bands}=result,T=bands[bands.length-1].t;
+  const av=bands.flatMap(b=>[b.p5,b.p95]).filter(isFinite);
+  if(!av.length)return null;
+  const mn=Math.min(...av)*0.97,mx=Math.max(...av)*1.03;
+  const xs=t=>PL+(t/T)*(W-PL-PR),ys=v=>PT+(1-(v-mn)/(mx-mn))*(H-PT-PB);
+  const line=k=>bands.map((b,i)=>`${i===0?'M':'L'}${xs(b.t).toFixed(1)},${ys(b[k]).toFixed(1)}`).join(' ');
+  const band=(k1,k2)=>line(k1)+' '+[...bands].reverse().map(b=>`L${xs(b.t).toFixed(1)},${ys(b[k2]).toFixed(1)}`).join(' ')+'Z';
+  const yVals=Array.from({length:5},(_,i)=>mn+(mx-mn)*i/4);
+  const xStep=T<=63?10:T<=252?42:84;
+  const xVals=[];for(let t=0;t<=T;t+=xStep)xVals.push(t);
+  return(
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}}>
+      <defs><linearGradient id="g1" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#4F46E5" stopOpacity=".15"/><stop offset="100%" stopColor="#4F46E5" stopOpacity=".02"/></linearGradient></defs>
+      {yVals.map((v,i)=><g key={i}><line x1={PL} y1={ys(v)} x2={W-PR} y2={ys(v)} stroke="#F1F5F9" strokeWidth="1"/><text x={PL-6} y={ys(v)+4} textAnchor="end" fontSize="10" fill="#94A3B8">{fmtK(v)}</text></g>)}
+      {xVals.map((t,i)=><text key={i} x={xs(t)} y={H-8} textAnchor="middle" fontSize="10" fill="#94A3B8">d{t}</text>)}
+      <path d={band('p5','p95')} fill="url(#g1)"/>
+      <path d={band('p25','p75')} fill="#4F46E520"/>
+      <path d={line('p95')} fill="none" stroke="#4F46E540" strokeWidth="1" strokeDasharray="4,3"/>
+      <path d={line('p5')} fill="none" stroke="#EF444440" strokeWidth="1" strokeDasharray="4,3"/>
+      <path d={line('p50')} fill="none" stroke="#4F46E5" strokeWidth="2.5" strokeLinejoin="round"/>
+      <line x1={PL} y1={ys(S0)} x2={W-PR} y2={ys(S0)} stroke="#94A3B8" strokeDasharray="5,4" strokeWidth="1"/>
+      <text x={W-PR+4} y={ys(S0)+4} fontSize="9" fill="#94A3B8">Inicial</text>
+    </svg>
+  );
+}
+
+/* ═══════════════════ APP ═══════════════════ */
+function App(){
+  const[tab,setTab]          =useState('dashboard');
+  const[assets,setAssets]    =useState([]);
+  const[txs,setTxs]          =useState([]);
+  const[prices,setPrices]    =useState({});
+  const[fetching,setFetching]=useState(false);
+  const[lastUp,setLastUp]    =useState(null);
+  const[countdown,setCD]     =useState(60);
+  const[priceErr,setPriceErr]=useState('');
+  const[form,setForm]        =useState({symbol:'',name:'',assetType:'stock',quantity:'',price:'',action:'buy'});
+  const[formErr,setFormErr]  =useState('');
+  const[mc,setMc]            =useState({mu:8,sigma:20,T:252,N:500});
+  const[mcRes,setMcRes]      =useState(null);
+  const[mcBusy,setMcBusy]    =useState(false);
+  const[news,setNews]        =useState([]);
+  const[newsLoad,setNewsLoad]=useState(false);
+  const[newsErr,setNewsErr]  =useState('');
+  const aRef=useRef(assets);aRef.current=assets;
+
+  useEffect(()=>{const a=store.get('pf:assets'),t=store.get('pf:txs');if(Array.isArray(a))setAssets(a);if(Array.isArray(t))setTxs(t);},[]);
+  useEffect(()=>{store.set('pf:assets',assets);},[assets]);
+  useEffect(()=>{store.set('pf:txs',txs);},[txs]);
+
+  const doFetch=useCallback(async(list)=>{
+    const a=list??aRef.current;if(!a?.length)return;
+    setFetching(true);setPriceErr('');setCD(60);
+    try{const p=await fetchAllPrices(a);if(Object.keys(p).length)setPrices(prev=>({...prev,...p}));setLastUp(new Date());}
+    catch{setPriceErr('Error al obtener precios.');}
+    finally{setFetching(false);}
+  },[]);
+
+  useEffect(()=>{doFetch();const iv=setInterval(()=>doFetch(),60000);return()=>clearInterval(iv);},[doFetch]);
+  useEffect(()=>{const iv=setInterval(()=>setCD(c=>c>0?c-1:60),1000);return()=>clearInterval(iv);},[]);
+  useEffect(()=>{if(tab==='news'&&!news.length)getNews();},[tab]);
+
+  const getNews=async()=>{setNewsLoad(true);setNewsErr('');try{const items=await loadNews();if(items.length)setNews(items);else setNewsErr('No se pudieron cargar las noticias.');}catch{setNewsErr('Error de conexión.');}finally{setNewsLoad(false);};};
+
+  /* Select asset from search */
+  const onAssetSelect=a=>{setForm(f=>({...f,symbol:a.s,name:a.n,assetType:a.t}));};
+
+  /* Add transaction */
+  const handleAdd=()=>{
+    const{symbol,name,assetType,quantity,price,action}=form;
+    if(!symbol.trim())return setFormErr('Selecciona o ingresa un símbolo.');
+    if(!quantity||isNaN(+quantity)||+quantity<=0)return setFormErr('Cantidad inválida.');
+    if(!price||isNaN(+price)||+price<=0)return setFormErr('Precio inválido.');
+    setFormErr('');
+    const sym=symbol.toUpperCase().trim(),qty=+quantity,prc=+price;
+    setTxs(p=>[{id:Date.now(),symbol:sym,name:name.trim()||sym,assetType,action,quantity:qty,price:prc,date:new Date().toISOString()},...p]);
+    const updated=(()=>{
+      const prev=[...assets],ex=prev.find(a=>a.symbol===sym);
+      if(action==='buy'){
+        if(ex){const nq=ex.quantity+qty,na=(ex.avgPrice*ex.quantity+prc*qty)/nq;return prev.map(a=>a.symbol===sym?{...a,quantity:nq,avgPrice:na,name:name.trim()||a.name}:a);}
+        return[...prev,{id:Date.now(),symbol:sym,name:name.trim()||sym,assetType,quantity:qty,avgPrice:prc}];
+      }else{if(!ex)return prev;const nq=ex.quantity-qty;return nq<=0.0001?prev.filter(a=>a.symbol!==sym):prev.map(a=>a.symbol===sym?{...a,quantity:nq}:a);}
+    })();
+    setAssets(updated);
+    setForm({symbol:'',name:'',assetType:'stock',quantity:'',price:'',action:'buy'});
+    setTimeout(()=>doFetch(updated),900);
+  };
+
+  const gP=sym=>prices[sym]?.price??null;
+  const gC=sym=>prices[sym]?.change_pct??null;
+  const gV=a=>a.quantity*(gP(a.symbol)??a.avgPrice);
+  const totV =useMemo(()=>assets.reduce((s,a)=>s+gV(a),0),[assets,prices]);
+  const totC =useMemo(()=>assets.reduce((s,a)=>s+a.quantity*a.avgPrice,0),[assets]);
+  const totPnL=totV-totC,totPct=totC>0?(totPnL/totC)*100:0;
+  const dayChg=useMemo(()=>assets.reduce((s,a)=>{const c=gC(a.symbol);if(c==null)return s;return s+gV(a)*(c/(100+c));},0),[assets,prices]);
+  const pie=useMemo(()=>assets.map(a=>({name:a.symbol,value:gV(a)})),[assets,prices]);
+
+  const doMC=()=>{if(totV<=0)return;setMcBusy(true);setMcRes(null);setTimeout(()=>{try{setMcRes(runMC({S0:totV,mu:mc.mu/100,sigma:mc.sigma/100,T:mc.T,N:mc.N}));}catch(e){console.error(e);}finally{setMcBusy(false);};},60);};
+
+  const TABS=[['dashboard','📊 Dashboard'],['assets','💼 Activos'],['montecarlo','🎲 Monte Carlo'],['transactions','🔄 Transacciones'],['news','📰 Noticias']];
+
+  return(
+    <div style={{minHeight:'100vh',background:'#F8FAFC'}}>
+
+      {/* Header */}
+      <div style={{background:'white',borderBottom:'1px solid #F1F5F9',padding:'12px 24px',display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky',top:0,zIndex:100,boxShadow:'0 1px 3px rgba(0,0,0,0.04)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:42,height:42,background:'linear-gradient(135deg,#4F46E5,#7C3AED)',borderRadius:12,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>📈</div>
+          <div><div style={{fontSize:16,fontWeight:700,color:'#0F172A'}}>Mi Cartera Pro</div><div style={{fontSize:11,color:'#94A3B8'}}>Investment Portfolio Manager</div></div>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:24}}>
+          <div style={{fontSize:11,color:'#94A3B8'}}>
+            {fetching?<span style={{color:'#4F46E5'}}>⟳ Actualizando precios…</span>
+             :priceErr?<span style={{color:red}}>{priceErr}</span>
+             :lastUp?<>Act. {fmtTime(lastUp)} · próx. <b style={{color:'#4F46E5'}}>{countdown}s</b></>
+             :assets.length?'Esperando precios…':'Agrega tu primer activo'}
+          </div>
+          {totV>0&&(
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:10,color:'#94A3B8',fontWeight:600,letterSpacing:'0.06em'}}>PORTAFOLIO TOTAL</div>
+              <div style={{fontSize:22,fontWeight:700,color:'#0F172A'}}>{fmtUSD(totV)}</div>
+              <div style={{fontSize:11,color:pc(totPnL)}}>{totPnL>=0?'+':''}{fmtUSD(totPnL)} ({totPct>=0?'+':''}{fmt(totPct)}%)</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{background:'white',borderBottom:'1px solid #F1F5F9',padding:'0 24px',display:'flex',overflowX:'auto'}}>
+        {TABS.map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)} style={{padding:'12px 18px',border:'none',borderBottom:tab===k?'2px solid #4F46E5':'2px solid transparent',background:'none',color:tab===k?'#4F46E5':'#64748B',fontWeight:tab===k?600:400,fontSize:13,cursor:'pointer',whiteSpace:'nowrap',fontFamily:'inherit',marginBottom:-1}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      <div style={{padding:'20px 24px',maxWidth:1180,margin:'0 auto'}}>
+
+        {/* ═══ DASHBOARD ═══ */}
+        {tab==='dashboard'&&(
+          <div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:18}}>
+              {[['VALOR TOTAL',fmtUSD(totV),`${assets.length} activo${assets.length!==1?'s':''}`,null],['P&L TOTAL',(totPnL>=0?'+':'')+fmtUSD(totPnL),(totPct>=0?'+':'')+fmt(totPct)+'%',totPnL],['CAMBIO 24h',(dayChg>=0?'+':'')+fmtUSD(dayChg),'Variación del día',dayChg],['COSTO BASE',fmtUSD(totC),'Capital invertido',null]].map(([lbl,val,sub,pnl])=>(
+                <div key={lbl} style={CARD}>
+                  <div style={{fontSize:10,color:'#94A3B8',marginBottom:8,fontWeight:600,letterSpacing:'0.06em'}}>{lbl}</div>
+                  <div style={{fontSize:22,fontWeight:700,color:pnl!=null?pc(pnl):'#0F172A',lineHeight:1.1}}>{val}</div>
+                  <div style={{fontSize:12,color:pnl!=null?pc(pnl):'#94A3B8',marginTop:5}}>{sub}</div>
+                </div>
+              ))}
+            </div>
+            {assets.length===0?(
+              <div style={{...CARD,textAlign:'center',padding:64}}>
+                <div style={{fontSize:52}}>📭</div>
+                <div style={{color:'#64748B',marginTop:14,fontWeight:600}}>Portafolio vacío</div>
+                <div style={{color:'#94A3B8',fontSize:13,marginTop:6}}>Ve a <b>Transacciones</b> y busca un activo para empezar.</div>
+              </div>
+            ):(
+              <div style={{display:'grid',gridTemplateColumns:'220px 1fr',gap:16}}>
+                <div style={CARD}>
+                  <div style={{fontSize:13,fontWeight:600,color:'#0F172A',marginBottom:10}}>Distribución</div>
+                  <div style={{display:'flex',justifyContent:'center'}}><Donut data={pie} total={totV}/></div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:5,justifyContent:'center',marginTop:8}}>
+                    {pie.map((d,i)=><span key={i} style={{display:'flex',alignItems:'center',gap:3,fontSize:11,color:'#64748B'}}><span style={{width:7,height:7,borderRadius:'50%',background:COLORS[i%COLORS.length],display:'inline-block'}}/>{d.name} {totV>0?fmt(d.value/totV*100,1):0}%</span>)}
+                  </div>
+                </div>
+                <div style={CARD}>
+                  <div style={{fontSize:13,fontWeight:600,color:'#0F172A',marginBottom:12}}>Posiciones</div>
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse'}}>
+                      <thead><tr style={{background:'#F8FAFC'}}>{['Activo','Cantidad','Precio Prom.','Precio Act.','Valor','P&L $','P&L %','24h'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+                      <tbody>{[...assets].sort((a,b)=>gV(b)-gV(a)).map(a=>{const cp=gP(a.symbol),val=gV(a),cost=a.quantity*a.avgPrice,pnl=val-cost,pp=cost>0?(pnl/cost)*100:0,chg=gC(a.symbol);return(<tr key={a.id}><td style={TD}><b style={{color:'#4F46E5'}}>{a.symbol}</b><span style={{fontSize:11,color:'#94A3B8',marginLeft:5}}>{a.name}</span></td><td style={TD}>{fmt(a.quantity,4)}</td><td style={TD}>{fmtUSD(a.avgPrice)}</td><td style={TD}>{cp?fmtUSD(cp):<span style={{color:'#CBD5E1'}}>—</span>}</td><td style={{...TD,fontWeight:600}}>{fmtUSD(val)}</td><td style={{...TD,color:pc(pnl),fontWeight:600}}>{pnl>=0?'+':''}{fmtUSD(pnl)}</td><td style={{...TD,color:pc(pp),fontWeight:600}}>{pp>=0?'+':''}{fmt(pp)}%</td><td style={{...TD,color:chg!=null?pc(chg):'#CBD5E1'}}>{chg!=null?`${chg>=0?'+':''}${fmt(chg)}%`:'—'}</td></tr>);})}</tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ ACTIVOS ═══ */}
+        {tab==='assets'&&(
+          <div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+              <div style={{fontSize:15,fontWeight:600,color:'#0F172A'}}>Mis Activos</div>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={()=>exportCSV(assets.map(a=>({Symbol:a.symbol,Name:a.name,Type:a.assetType,Qty:a.quantity,AvgPrice:a.avgPrice,CurrentPrice:gP(a.symbol)??'N/A',Value:fmt(gV(a)),PnL:fmt(gV(a)-a.quantity*a.avgPrice)})),'activos.csv')} style={BTN('white',true)}>⬇ CSV</button>
+                <button onClick={()=>doFetch()} disabled={fetching} style={{...BTN(),opacity:fetching?0.6:1}}>{fetching?'⟳…':'↻ Actualizar'}</button>
+              </div>
+            </div>
+            {assets.length===0?(<div style={{...CARD,textAlign:'center',padding:64}}><div style={{fontSize:52}}>📭</div><div style={{color:'#64748B',marginTop:14}}>Sin activos registrados.</div></div>):(
+              <div style={{...CARD,padding:0,overflow:'hidden'}}><div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse'}}>
+                  <thead><tr style={{background:'#F8FAFC'}}>{['Símbolo','Nombre','Tipo','Cantidad','Precio Prom.','Precio Act.','Valor','P&L $','P&L %','24h','Mkt Cap',''].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+                  <tbody>{assets.map((a,i)=>{const cp=gP(a.symbol),val=gV(a),cost=a.quantity*a.avgPrice,pnl=val-cost,pp=cost>0?(pnl/cost)*100:0,chg=gC(a.symbol),mc2=prices[a.symbol]?.mktcap;return(<tr key={a.id} style={{background:i%2===0?'white':'#FAFAFA'}}><td style={{...TD,fontWeight:700,color:'#4F46E5'}}>{a.symbol}</td><td style={{...TD,color:'#64748B'}}>{a.name}</td><td style={TD}><span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#EEF2FF',color:'#4F46E5'}}>{a.assetType}</span></td><td style={TD}>{fmt(a.quantity,4)}</td><td style={TD}>{fmtUSD(a.avgPrice)}</td><td style={TD}>{cp?fmtUSD(cp):<span style={{color:'#CBD5E1'}}>—</span>}</td><td style={{...TD,fontWeight:600}}>{fmtUSD(val)}</td><td style={{...TD,color:pc(pnl),fontWeight:600}}>{pnl>=0?'+':''}{fmtUSD(pnl)}</td><td style={{...TD,color:pc(pp),fontWeight:600}}>{pp>=0?'+':''}{fmt(pp)}%</td><td style={{...TD,color:chg!=null?pc(chg):'#CBD5E1'}}>{chg!=null?`${chg>=0?'+':''}${fmt(chg)}%`:'—'}</td><td style={{...TD,color:'#64748B'}}>{mc2?fmtK(mc2):'—'}</td><td style={TD}><button onClick={()=>{if(window.confirm('¿Eliminar activo?'))setAssets(p=>p.filter(b=>b.id!==a.id));}} style={{background:'none',border:'none',color:red,cursor:'pointer',fontSize:18,padding:'0 4px'}}>×</button></td></tr>);})}</tbody>
+                </table>
+              </div></div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ MONTE CARLO ═══ */}
+        {tab==='montecarlo'&&(
+          <div style={{display:'grid',gridTemplateColumns:'290px 1fr',gap:16,alignItems:'start'}}>
+            <div style={CARD}>
+              <div style={{fontSize:14,fontWeight:600,color:'#0F172A',marginBottom:2}}>⚙️ Parámetros</div>
+              <div style={{fontSize:11,color:'#94A3B8',marginBottom:16}}>Movimiento Browniano Geométrico (GBM)</div>
+              <div style={{marginBottom:12}}><label style={LBL}>VALOR INICIAL (portafolio)</label><input disabled value={fmtUSD(totV||0)} style={{...INP,background:'#F8FAFC',color:'#64748B'}}/></div>
+              {[['RETORNO ANUAL ESPERADO (μ %)',mc.mu,1,50,v=>setMc(p=>({...p,mu:v}))],['VOLATILIDAD ANUAL (σ %)',mc.sigma,1,100,v=>setMc(p=>({...p,sigma:v}))]].map(([lbl,val,min,max,set])=>(
+                <div key={lbl} style={{marginBottom:14}}><label style={LBL}>{lbl}</label><div style={{display:'flex',gap:8,alignItems:'center'}}><input type="range" min={min} max={max} step="0.5" value={val} onChange={e=>set(+e.target.value)} style={{flex:1}}/><input type="number" value={val} min={min} max={max} onChange={e=>set(Math.max(min,Math.min(max,+e.target.value||min)))} style={{...INP,width:58,padding:'6px 8px'}}/></div></div>
+              ))}
+              <div style={{marginBottom:14}}><label style={LBL}>HORIZONTE TEMPORAL</label><select value={mc.T} onChange={e=>setMc(p=>({...p,T:+e.target.value}))} style={INP}>{[[21,'1 mes'],[63,'3 meses'],[126,'6 meses'],[252,'1 año'],[504,'2 años'],[756,'3 años']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
+              <div style={{marginBottom:18}}><label style={LBL}>NÚMERO DE SIMULACIONES</label><select value={mc.N} onChange={e=>setMc(p=>({...p,N:+e.target.value}))} style={INP}>{[[200,'200 — rápido'],[500,'500 — estándar'],[1000,'1,000 — preciso'],[2000,'2,000 — alta precisión']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
+              <button onClick={doMC} disabled={mcBusy||totV<=0} style={{...BTN(),width:'100%',opacity:(mcBusy||totV<=0)?0.65:1}}>{mcBusy?'⟳ Simulando…':'▶ Ejecutar Simulación'}</button>
+              {totV<=0&&<div style={{fontSize:11,color:red,marginTop:6,textAlign:'center'}}>Agrega activos primero</div>}
+              <div style={{marginTop:14,padding:12,background:'#F8FAFC',borderRadius:10,fontSize:11,color:'#64748B',lineHeight:1.7}}><b>μ</b> — retorno anual esperado<br/><b>σ</b> — volatilidad anual<br/><b>VaR 95%</b> — pérdida máx. con 95% confianza<br/><b>CVaR 95%</b> — pérdida promedio en el peor 5%</div>
+            </div>
+            <div>
+              {!mcRes&&!mcBusy?(<div style={{...CARD,textAlign:'center',padding:72}}><div style={{fontSize:56}}>🎲</div><div style={{color:'#64748B',marginTop:14,fontWeight:600,fontSize:15}}>Configura y ejecuta la simulación</div><div style={{color:'#94A3B8',fontSize:13,marginTop:6}}>Se generarán <b>{mc.N.toLocaleString()}</b> trayectorias para <b>{mc.T}</b> días</div></div>)
+              :mcBusy?(<div style={{...CARD,textAlign:'center',padding:72}}><div style={{fontSize:44}}>⟳</div><div style={{color:'#64748B',marginTop:14}}>Ejecutando {mc.N.toLocaleString()} simulaciones…</div></div>)
+              :mcRes&&(<div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:14}}>
+                  {[['VALOR MEDIANO (p50)',fmtUSD(mcRes.p50),`en ${mc.T} días`,null],['PROB. GANANCIA',fmt(mcRes.probGain,1)+'%','escenarios positivos',mcRes.probGain-50],['RETORNO ESPERADO',(mcRes.retEsp>=0?'+':'')+fmt(mcRes.retEsp,2)+'%','sobre valor inicial',mcRes.retEsp],['ESCENARIO PESIMISTA (p5)',fmtUSD(mcRes.p5),'peor 5%',mcRes.p5-totV],['VaR 95%',fmtUSD(mcRes.VaR95),'pérdida máx. 95% conf.',-1],['ESCENARIO OPTIMISTA (p95)',fmtUSD(mcRes.p95),'mejor 5%',1]].map(([lbl,val,sub,pnl])=>(
+                    <div key={lbl} style={{...CARD,padding:14}}><div style={{fontSize:10,color:'#94A3B8',marginBottom:6,fontWeight:600,letterSpacing:'0.05em'}}>{lbl}</div><div style={{fontSize:18,fontWeight:700,color:pnl!=null?pc(pnl):'#0F172A'}}>{val}</div><div style={{fontSize:11,color:'#94A3B8',marginTop:3}}>{sub}</div></div>
+                  ))}
+                </div>
+                <div style={CARD}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                    <div style={{fontSize:13,fontWeight:600,color:'#0F172A'}}>Distribución de Trayectorias</div>
+                    <div style={{display:'flex',gap:12,fontSize:11,color:'#94A3B8'}}>
+                      {[['#4F46E5','Mediana'],['#4F46E540','p25-p75'],['#4F46E515','p5-p95']].map(([c,l])=><span key={l} style={{display:'flex',alignItems:'center',gap:4}}><span style={{display:'inline-block',width:16,height:3,background:c,borderRadius:2}}/>{l}</span>)}
+                    </div>
+                  </div>
+                  <MCChart result={mcRes} S0={totV}/>
+                </div>
+              </div>)}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ TRANSACCIONES ═══ */}
+        {tab==='transactions'&&(
+          <div>
+            <div style={{...CARD,marginBottom:16}}>
+              <div style={{fontSize:14,fontWeight:600,color:'#0F172A',marginBottom:14}}>Registrar Operación</div>
+
+              {/* Buscador principal */}
+              <div style={{marginBottom:16}}>
+                <AssetSearch onSelect={onAssetSelect}/>
+                {form.symbol&&(
+                  <div style={{marginTop:8,padding:'10px 14px',background:'#EEF2FF',borderRadius:10,display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:36,height:36,borderRadius:8,background:'#4F46E5',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      <span style={{fontSize:12,fontWeight:800,color:'white'}}>{form.symbol.slice(0,4)}</span>
+                    </div>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:600,color:'#4F46E5'}}>{form.symbol}</div>
+                      <div style={{fontSize:11,color:'#6366F1'}}>{form.name}</div>
+                    </div>
+                    <button onClick={()=>setForm(f=>({...f,symbol:'',name:''}))} style={{marginLeft:'auto',background:'none',border:'none',color:'#94A3B8',cursor:'pointer',fontSize:18}}>×</button>
+                  </div>
+                )}
+              </div>
+
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr 1fr',gap:10}}>
+                {[['ACCIÓN','action','select',null,[['buy','🟢 Compra'],['sell','🔴 Venta']]],['TIPO','assetType','select',null,[['stock','Acción'],['crypto','Cripto'],['etf','ETF'],['bond','Bono']]],['SÍMBOLO (manual)','symbol','text','AAPL',null],['NOMBRE','name','text','Apple Inc.',null],['CANTIDAD','quantity','number','10',null],['PRECIO (USD)','price','number','150.00',null]].map(([lbl,key,type,ph,opts])=>(
+                  <div key={key}><label style={LBL}>{lbl}</label>
+                    {type==='select'?<select value={form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} style={INP}>{opts.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>
+                    :<input type={type} value={form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} placeholder={ph} style={INP} onKeyDown={e=>{if(e.key==='Enter')handleAdd();}}/>}
+                  </div>
+                ))}
+              </div>
+              {formErr&&<div style={{color:red,fontSize:12,marginTop:10}}>⚠ {formErr}</div>}
+              <div style={{display:'flex',gap:8,marginTop:14}}>
+                <button onClick={handleAdd} style={BTN()}>+ Registrar</button>
+                <button onClick={()=>exportCSV(txs.map(t=>({Date:fmtDate(t.date),Type:t.assetType,Action:t.action,Symbol:t.symbol,Name:t.name,Qty:t.quantity,Price:t.price,Total:+(t.quantity*t.price).toFixed(2)})),'transacciones.csv')} style={BTN('white')}>⬇ CSV</button>
+              </div>
+            </div>
+
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <div style={{fontSize:14,fontWeight:600,color:'#0F172A'}}>Historial ({txs.length})</div>
+              {txs.length>0&&<button onClick={()=>{if(window.confirm('¿Borrar todo el historial?'))setTxs([]);}} style={BTN('white',true)}>🗑 Borrar todo</button>}
+            </div>
+            {txs.length===0?(<div style={{...CARD,textAlign:'center',padding:52}}><div style={{fontSize:44}}>📋</div><div style={{color:'#64748B',marginTop:12}}>Sin transacciones aún.</div></div>):(
+              <div style={{...CARD,padding:0,overflow:'hidden'}}><div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse'}}>
+                  <thead><tr style={{background:'#F8FAFC'}}>{['Fecha','Tipo','Acción','Símbolo','Nombre','Cantidad','Precio','Total',''].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+                  <tbody>{txs.map((tx,i)=>(<tr key={tx.id} style={{background:i%2===0?'white':'#FAFAFA'}}><td style={{...TD,color:'#94A3B8',fontSize:12,whiteSpace:'nowrap'}}>{fmtDate(tx.date)}</td><td style={TD}><span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#EEF2FF',color:'#4F46E5'}}>{tx.assetType}</span></td><td style={TD}><span style={{fontSize:11,padding:'3px 10px',borderRadius:20,fontWeight:600,...(tx.action==='buy'?{background:'#ECFDF5',color:'#059669'}:{background:'#FEF2F2',color:'#DC2626'})}}>{tx.action==='buy'?'▲ COMPRA':'▼ VENTA'}</span></td><td style={{...TD,fontWeight:700,color:'#4F46E5'}}>{tx.symbol}</td><td style={{...TD,color:'#64748B'}}>{tx.name}</td><td style={TD}>{fmt(tx.quantity,4)}</td><td style={TD}>{fmtUSD(tx.price)}</td><td style={{...TD,fontWeight:600}}>{fmtUSD(tx.quantity*tx.price)}</td><td style={TD}><button onClick={()=>setTxs(p=>p.filter(t=>t.id!==tx.id))} style={{background:'none',border:'none',color:red,cursor:'pointer',fontSize:20,padding:'0 4px'}}>×</button></td></tr>))}</tbody>
+                </table>
+              </div></div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ NOTICIAS ═══ */}
+        {tab==='news'&&(
+          <div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+              <div><div style={{fontSize:15,fontWeight:600,color:'#0F172A'}}>Noticias Financieras</div><div style={{fontSize:12,color:'#94A3B8'}}>Fuente: Yahoo Finance RSS</div></div>
+              <button onClick={getNews} disabled={newsLoad} style={{...BTN(),opacity:newsLoad?0.6:1}}>{newsLoad?'⟳ Cargando…':'↻ Actualizar'}</button>
+            </div>
+            {newsLoad?(<div style={{...CARD,textAlign:'center',padding:64}}><div style={{fontSize:38}}>⟳</div><div style={{color:'#94A3B8',marginTop:12}}>Cargando noticias…</div></div>)
+            :newsErr?(<div style={{...CARD,textAlign:'center',padding:64}}><div style={{fontSize:38}}>⚠️</div><div style={{color:red,marginTop:12}}>{newsErr}</div><button onClick={getNews} style={{...BTN(),marginTop:16}}>Reintentar</button></div>)
+            :news.length===0?(<div style={{...CARD,textAlign:'center',padding:64}}><div style={{fontSize:52}}>📰</div><div style={{color:'#64748B',marginTop:14,fontWeight:500}}>Presiona <b>Actualizar</b> para cargar noticias.</div></div>)
+            :(
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:14}}>
+                {news.map((n,i)=>(
+                  <a key={i} href={n.link||'#'} target="_blank" rel="noreferrer" style={{...CARD,display:'block',cursor:'pointer',transition:'box-shadow .2s'}} onMouseEnter={e=>e.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,0.10)'} onMouseLeave={e=>e.currentTarget.style.boxShadow='0 1px 4px rgba(0,0,0,0.06)'}>
+                    {n.thumbnail&&<img src={n.thumbnail} alt="" style={{width:'100%',height:124,objectFit:'cover',borderRadius:10,marginBottom:10,display:'block'}} onError={e=>e.target.style.display='none'}/>}
+                    <div style={{fontSize:11,color:'#4F46E5',marginBottom:4,fontWeight:600}}>{n.author||'Yahoo Finance'}</div>
+                    <div style={{fontSize:13,fontWeight:600,color:'#0F172A',lineHeight:1.45,marginBottom:8}}>{n.title}</div>
+                    <div style={{fontSize:12,color:'#94A3B8',lineHeight:1.45,display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{(n.description||'').replace(/<[^>]*>/g,'')}</div>
+                    <div style={{fontSize:11,color:'#CBD5E1',marginTop:8}}>{n.pubDate?fmtDate(n.pubDate):''}</div>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
