@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio Pro — Angello Brito</title>
+  <meta name="description" content="Dashboard de inversiones con precios en tiempo real">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #060b18; --bg2: #0c1222; --card: #111827;
+      --border: #1e293b; --green: #10b981; --greenDim: #065f46;
+      --red: #ef4444; --redDim: #7f1d1d; --blue: #3b82f6;
+      --blueDim: #1e3a5f; --amber: #f59e0b; --purple: #8b5cf6;
+      --cyan: #06b6d4; --text: #f1f5f9; --textSec: #94a3b8;
+      --muted: #475569; --gold: #fbbf24;
+    }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    input, select, button { font-family: inherit; }
+    input { width: 100%; padding: 10px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 14px; outline: none; }
+    input:focus { border-color: var(--blue); }
+    .btn { padding: 10px 20px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, var(--blue), var(--purple)); color: #fff; }
+    .btn-success { background: var(--green); color: #fff; }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-ghost { background: transparent; color: var(--textSec); border: 1px solid var(--border); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+    .kpi { position: relative; overflow: hidden; flex: 1; min-width: 155px; }
+    .kpi-blob { position: absolute; top: -20px; right: -20px; width: 80px; height: 80px; border-radius: 50%; opacity: 0.06; }
+    .kpi-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 6px; }
+    .kpi-val { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+    .green { color: var(--green); } .red { color: var(--red); } .blue { color: var(--blue); }
+    .header { background: var(--card); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+    .tabs { display: flex; gap: 4px; padding: 10px 20px; background: var(--bg2); border-bottom: 1px solid var(--border); overflow-x: auto; }
+    .tab { padding: 7px 14px; border-radius: 7px; border: none; font-weight: 600; font-size: 12px; cursor: pointer; white-space: nowrap; font-family: inherit; background: transparent; color: var(--muted); }
+    .tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+    .main { padding: 16px 20px; max-width: 1100px; margin: 0 auto; }
+    .flex { display: flex; } .wrap { flex-wrap: wrap; } .gap-12 { gap: 12px; } .gap-8 { gap: 8px; } .gap-6 { gap: 6px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+    .col { display: flex; flex-direction: column; }
+    .between { justify-content: space-between; } .center { align-items: center; }
+    .text-right { text-align: right; } .text-center { text-align: center; }
+    .mb-12 { margin-bottom: 12px; } .mb-16 { margin-bottom: 16px; } .mb-14 { margin-bottom: 14px; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); }
+    .modal { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; width: 92%; max-width: 420px; max-height: 85vh; overflow-y: auto; }
+    .pos-card { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .asset-row { padding: 9px 14px; cursor: pointer; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(30,41,59,0.1); }
+    .asset-row:hover { background: var(--bg2); }
+    .badge { font-size: 10px; text-transform: uppercase; background: var(--bg); padding: 2px 7px; border-radius: 4px; color: var(--textSec); }
+    .empty { padding: 40px; text-align: center; }
+    .empty-icon { font-size: 36px; margin-bottom: 10px; }
+    .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .watch-card { position: relative; }
+    .watch-close { position: absolute; top: 10px; right: 10px; background: transparent; border: none; color: var(--muted); cursor: pointer; opacity: 0.4; font-size: 14px; }
+    .target-box { margin-top: 8px; padding: 6px 10px; background: var(--bg2); border-radius: 6px; font-size: 11px; color: var(--textSec); }
+    .tx-toggle { flex: 1; padding: 10px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; text-transform: uppercase; font-family: inherit; }
+    .auth-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; position: relative; }
+    .auth-bg { position: fixed; inset: 0; background: radial-gradient(ellipse at 30% 20%, rgba(30,58,95,0.2) 0%, transparent 50%), radial-gradient(ellipse at 70% 80%, rgba(6,95,70,0.2) 0%, transparent 50%); pointer-events: none; }
+    .auth-card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 36px; width: 90%; max-width: 420px; position: relative; z-index: 1; }
+    .auth-logo { width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, var(--blue), var(--purple)); display: inline-flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 16px; }
+    .error-box { background: var(--redDim); border: 1px solid rgba(239,68,68,0.25); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; color: var(--red); font-size: 13px; }
+    .success-box { background: var(--greenDim); border: 1px solid rgba(16,185,129,0.25); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; color: var(--green); font-size: 13px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; color: var(--textSec); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+    .selected-asset { background: var(--bg2); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+    .total-box { background: var(--bg2); border-radius: 8px; padding: 10px; margin-bottom: 14px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    // ─── Supabase ───
+    const SB_URL = "https://mabmqxztvakaijtrncyl.supabase.co";
+    const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hYm1xeHp0dmFrYWlqdHJuY3lsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NTA1NDMsImV4cCI6MjA4OTUyNjU0M30.b_e_5Hf7c3UqEMDXFwoYDGW7ElLXBG5YgP9Q4EtpkeI";
+    const supabase = window.supabase.createClient(SB_URL, SB_KEY);
+
+    // ─── Assets ───
+    const ASSETS = [
+      {id:"btc",s:"BTC",n:"Bitcoin",t:"crypto",cg:"bitcoin"},
+      {id:"eth",s:"ETH",n:"Ethereum",t:"crypto",cg:"ethereum"},
+      {id:"sol",s:"SOL",n:"Solana",t:"crypto",cg:"solana"},
+      {id:"ada",s:"ADA",n:"Cardano",t:"crypto",cg:"cardano"},
+      {id:"xrp",s:"XRP",n:"XRP",t:"crypto",cg:"ripple"},
+      {id:"doge",s:"DOGE",n:"Dogecoin",t:"crypto",cg:"dogecoin"},
+      {id:"avax",s:"AVAX",n:"Avalanche",t:"crypto",cg:"avalanche-2"},
+      {id:"dot",s:"DOT",n:"Polkadot",t:"crypto",cg:"polkadot"},
+      {id:"link",s:"LINK",n:"Chainlink",t:"crypto",cg:"chainlink"},
+      {id:"matic",s:"MATIC",n:"Polygon",t:"crypto",cg:"matic-network"},
+      {id:"aapl",s:"AAPL",n:"Apple",t:"stock"},{id:"msft",s:"MSFT",n:"Microsoft",t:"stock"},
+      {id:"googl",s:"GOOGL",n:"Alphabet",t:"stock"},{id:"nvda",s:"NVDA",n:"NVIDIA",t:"stock"},
+      {id:"tsla",s:"TSLA",n:"Tesla",t:"stock"},{id:"meta",s:"META",n:"Meta",t:"stock"},
+      {id:"amzn",s:"AMZN",n:"Amazon",t:"stock"},
+      {id:"bimbo",s:"BIMBOA.MX",n:"Grupo Bimbo",t:"stock"},
+      {id:"amx",s:"AMXB.MX",n:"América Móvil",t:"stock"},
+      {id:"walmex",s:"WALMEX.MX",n:"Walmart MX",t:"stock"},
+      {id:"voo",s:"VOO",n:"Vanguard S&P 500",t:"etf"},
+      {id:"qqq",s:"QQQ",n:"Invesco QQQ",t:"etf"},
+      {id:"vti",s:"VTI",n:"Vanguard Total Mkt",t:"etf"},
+      {id:"naftrac",s:"NAFTRAC",n:"iShares NAFTRAC",t:"etf"},
+    ];
+
+    const fmt = v => Math.abs(v)>=1 ? "$"+v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}) : "$"+v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:6});
+    const fmtP = v => `${v>=0?"+":""}${v.toFixed(2)}%`;
+
+    // ─── State ───
+    let state = {
+      user: null, session: null, profile: null,
+      positions: [], txs: [], watchlist: [], prices: {},
+      loading: true, tab: "portfolio", modal: null,
+      txType: "buy", selAsset: null, search: "", qty: "", price: "", watchTarget: "",
+      authMode: "login", authEmail: "", authPass: "", authName: "", authError: "", authSuccess: "", authLoading: false
+    };
+
+    const setState = (patch) => { Object.assign(state, patch); render(); };
+
+    // ─── Auth ───
+    async function checkSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        state.session = session;
+        state.user = session.user;
+        await loadUserData();
+        await fetchPrices();
+      }
+      state.loading = false;
+      render();
+    }
+
+    async function handleAuth() {
+      setState({ authLoading: true, authError: "", authSuccess: "" });
+      try {
+        if (state.authMode === "signup") {
+          const { data, error } = await supabase.auth.signUp({ email: state.authEmail, password: state.authPass });
+          if (error) throw error;
+          if (data.session) {
+            state.session = data.session; state.user = data.user;
+            await loadUserData(); await fetchPrices();
+          } else {
+            setState({ authSuccess: "Cuenta creada. Revisa tu email o intenta iniciar sesión.", authMode: "login", authLoading: false });
+            return;
+          }
+        } else {
+          const { data, error } = await supabase.auth.signInWithPassword({ email: state.authEmail, password: state.authPass });
+          if (error) throw error;
+          state.session = data.session; state.user = data.user;
+          await loadUserData(); await fetchPrices();
+        }
+      } catch (e) { setState({ authError: e.message, authLoading: false }); return; }
+      setState({ authLoading: false });
+    }
+
+    async function logout() {
+      await supabase.auth.signOut();
+      state = { ...state, user: null, session: null, profile: null, positions: [], txs: [], watchlist: [], prices: {}, tab: "portfolio" };
+      render();
+    }
+
+    // ─── Data ───
+    async function loadUserData() {
+      if (!state.user) return;
+      let { data: profiles } = await supabase.from("user_profiles").select("*").eq("auth_id", state.user.id);
+      if (!profiles || profiles.length === 0) {
+        await supabase.from("user_profiles").insert({ auth_id: state.user.id, display_name: state.user.user_metadata?.display_name || "Inversor", email: state.user.email });
+        const r = await supabase.from("user_profiles").select("*").eq("auth_id", state.user.id);
+        profiles = r.data;
+      }
+      state.profile = profiles?.[0];
+      if (!state.profile) return;
+
+      const pid = state.profile.id;
+      const [posR, txR, wR] = await Promise.all([
+        supabase.from("positions").select("*,assets(symbol,name,asset_type,coingecko_id)").eq("user_id", pid),
+        supabase.from("transactions").select("*,assets(symbol,name,asset_type)").eq("user_id", pid).order("executed_at", { ascending: false }).limit(30),
+        supabase.from("watchlist").select("*,assets(symbol,name,asset_type,coingecko_id)").eq("user_id", pid)
+      ]);
+      // Flatten: attach symbol directly to each row for easy rendering
+      state.positions = (posR.data||[]).map(p => ({...p, symbol: p.assets?.symbol, assetName: p.assets?.name, assetType: p.assets?.asset_type}));
+      state.txs = (txR.data||[]).map(t => ({...t, symbol: t.assets?.symbol, assetName: t.assets?.name}));
+      state.watchlist = (wR.data||[]).map(w => ({...w, symbol: w.assets?.symbol, assetName: w.assets?.name}));
+    }
+
+    async function fetchPrices(silent) {
+      if (!silent) state.loading = true;
+      try {
+        const ids = ASSETS.filter(a=>a.cg).map(a=>a.cg).join(",");
+        const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,mxn&include_24hr_change=true&include_market_cap=true`);
+        const d = await r.json();
+        ASSETS.forEach(a => { if(a.cg && d[a.cg]) state.prices[a.id] = { usd: d[a.cg].usd, mxn: d[a.cg].mxn||0, ch: d[a.cg].usd_24h_change||0 }; });
+      } catch(e) { console.error(e); }
+      state.loading = false; render();
+    }
+
+    // ─── Actions ───
+    async function saveTx() {
+      if (!state.selAsset || !state.qty || !state.price || !state.profile) return;
+      const q = parseFloat(state.qty), pr = parseFloat(state.price);
+      const assetRow = await getOrCreateAsset(state.selAsset);
+      if (!assetRow) return;
+
+      await supabase.from("transactions").insert({ user_id: state.profile.id, asset_id: assetRow.id, tx_type: state.txType, quantity: q, price_per_unit: pr });
+
+      const existing = state.positions.find(p => p.asset_id === assetRow.id);
+      if (existing) {
+        const nq = state.txType === "buy" ? parseFloat(existing.quantity) + q : Math.max(0, parseFloat(existing.quantity) - q);
+        const navg = state.txType === "buy" ? ((parseFloat(existing.quantity) * parseFloat(existing.avg_cost)) + (q * pr)) / (nq || 1) : parseFloat(existing.avg_cost);
+        if (nq > 0) await supabase.from("positions").update({ quantity: nq, avg_cost: navg }).eq("id", existing.id);
+        else await supabase.from("positions").delete().eq("id", existing.id);
+      } else if (state.txType === "buy") {
+        await supabase.from("positions").insert({ user_id: state.profile.id, asset_id: assetRow.id, quantity: q, avg_cost: pr });
+      }
+      closeModal(); await loadUserData(); render();
+    }
+
+    async function getOrCreateAsset(a) {
+      const { data } = await supabase.from("assets").select("*").eq("symbol", a.s).eq("asset_type", a.t).limit(1);
+      if (data && data.length > 0) return data[0];
+      const { data: ins } = await supabase.from("assets").insert({ symbol: a.s, name: a.n, asset_type: a.t, coingecko_id: a.cg || null }).select().single();
+      return ins;
+    }
+
+    async function addToWatchlist() {
+      if (!state.selAsset || !state.profile) return;
+      const assetRow = await getOrCreateAsset(state.selAsset);
+      if (!assetRow) return;
+      await supabase.from("watchlist").insert({ user_id: state.profile.id, asset_id: assetRow.id, target_price: state.watchTarget ? parseFloat(state.watchTarget) : null });
+      closeModal(); await loadUserData(); render();
+    }
+
+    async function removePosition(id) { await supabase.from("positions").delete().eq("id", id); await loadUserData(); render(); }
+    async function removeWatch(id) { await supabase.from("watchlist").delete().eq("id", id); await loadUserData(); render(); }
+
+    function closeModal() { setState({ modal: null, selAsset: null, search: "", qty: "", price: "", watchTarget: "", txType: "buy" }); }
+
+    function findAssetInfo(pos) {
+      // Match by symbol from the DB asset
+      const dbAssets = state.positions;
+      // We need to match position asset_id to our local catalog
+      // For now, match by checking known IDs from seeds
+      return ASSETS.find(a => {
+        const p = state.prices[a.id];
+        return p !== undefined;
+      });
+    }
+
+    // ─── Render ───
+    function render() {
+      const app = document.getElementById("app");
+      if (state.loading && !state.user) { app.innerHTML = loadingHTML(); return; }
+      if (!state.user) { app.innerHTML = authHTML(); bindAuth(); return; }
+      app.innerHTML = dashboardHTML();
+      bindDashboard();
+    }
+
+    function loadingHTML() {
+      return `<div class="auth-container"><div class="auth-bg"></div><div style="text-align:center;z-index:1"><div class="spinner" style="margin:0 auto 16px"></div><div style="color:var(--textSec);font-size:14px">Cargando...</div></div></div>`;
+    }
+
+    function authHTML() {
+      const isLogin = state.authMode === "login";
+      return `<div class="auth-container"><div class="auth-bg"></div><div class="auth-card"><div class="text-center" style="margin-bottom:28px"><div class="auth-logo">📊</div><h1 style="font-size:24px;font-weight:800;margin:0">Portfolio Pro</h1><p style="color:var(--textSec);font-size:14px;margin:6px 0 0">Tu portafolio de inversión inteligente</p></div>${state.authError?`<div class="error-box">⚠ ${state.authError}</div>`:""}${state.authSuccess?`<div class="success-box">✓ ${state.authSuccess}</div>`:""}${!isLogin?`<div class="field"><label>Nombre</label><input id="authName" placeholder="Tu nombre" value="${state.authName}"></div>`:""}<div class="field"><label>Email</label><input id="authEmail" type="email" placeholder="tu@email.com" value="${state.authEmail}"></div><div class="field"><label>Contraseña</label><input id="authPass" type="password" placeholder="••••••••" value="${state.authPass}"></div><button id="authBtn" class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;margin-top:4px" ${state.authLoading?"disabled":""}>${state.authLoading?"⏳ ":""} ${isLogin?"Iniciar Sesión":"Crear Cuenta"}</button><p style="text-align:center;color:var(--muted);font-size:13px;margin-top:18px">${isLogin?"¿No tienes cuenta? ":"¿Ya tienes cuenta? "}<span id="authToggle" style="color:var(--blue);cursor:pointer;font-weight:600">${isLogin?"Crear una":"Iniciar sesión"}</span></p></div></div>`;
+    }
+
+    function dashboardHTML() {
+      // Calc positions with values
+      const posCalc = state.positions.map(p => {
+        const localA = ASSETS.find(a => a.s === p.symbol);
+        let pr = 0, ch = 0;
+        if (localA && state.prices[localA.id]) { pr = state.prices[localA.id].usd; ch = state.prices[localA.id].ch; }
+        const val = parseFloat(p.quantity) * pr;
+        const cost = parseFloat(p.quantity) * parseFloat(p.avg_cost);
+        const pnl = val - cost;
+        return { ...p, localA, sym: p.symbol, name: p.assetName, pr, val, cost, pnl, pnlP: cost > 0 ? (pnl/cost)*100 : 0, ch };
+      }).sort((a,b) => b.val - a.val);
+
+      const totVal = posCalc.reduce((s,p)=>s+p.val,0);
+      const totCost = posCalc.reduce((s,p)=>s+p.cost,0);
+      const totPnL = totVal - totCost;
+      const totPnLP = totCost > 0 ? (totPnL/totCost)*100 : 0;
+
+      const posHTML = posCalc.length === 0 ?
+        `<div class="card empty"><div class="empty-icon">💼</div><div style="color:var(--textSec);font-size:15px;font-weight:600;margin-bottom:6px">Portafolio vacío</div><div style="color:var(--muted);font-size:12px;margin-bottom:16px">Registra tu primera compra</div><button class="btn btn-success" onclick="document.getElementById('openTx').click()">+ Primera Compra</button></div>`
+        : posCalc.map(p => `<div class="card pos-card" style="padding:14px 16px"><div style="min-width:130px"><div style="font-weight:800;font-size:15px">${p.sym || "?"}</div><div style="color:var(--muted);font-size:11px">${p.name || "Activo"}</div><div style="color:var(--textSec);font-size:11px;margin-top:2px">${parseFloat(p.quantity).toLocaleString(undefined,{maximumFractionDigits:6})} × ${p.pr>0?fmt(p.pr):"—"}</div></div><div class="text-right"><div class="mono" style="font-size:17px;font-weight:800">${fmt(p.val)}</div><div style="color:${p.pnl>=0?"var(--green)":"var(--red)"};font-size:12px;font-weight:700;margin-top:2px">${p.pnl>=0?"▲":"▼"} ${fmt(p.pnl)} (${fmtP(p.pnlP)})</div>${p.ch?`<div style="color:${p.ch>=0?"var(--green)":"var(--red)"};font-size:11px;margin-top:1px">24h: ${fmtP(p.ch)}</div>`:""}</div><button class="btn-ghost" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:16px;opacity:0.4;padding:4px" data-rmpos="${p.id}">🗑</button></div>`).join("");
+
+      const watchHTML = state.watchlist.length === 0 ?
+        `<div class="card empty"><div class="empty-icon">👁</div><div style="color:var(--textSec);font-size:15px;font-weight:600;margin-bottom:14px">Watchlist vacía</div><button class="btn btn-primary" onclick="document.getElementById('openWatch').click()">+ Agregar</button></div>`
+        : `<div class="grid">${state.watchlist.map(w => {
+          const la = ASSETS.find(a => a.s === w.symbol);
+          const p = la ? state.prices[la.id] : null;
+          return `<div class="card watch-card" style="padding:16px"><button class="watch-close" data-rmwatch="${w.id}">✕</button><div style="font-weight:800;font-size:15px">${w.symbol||"?"}</div><div style="color:var(--muted);font-size:11px;margin-bottom:8px">${w.assetName||""}</div>${p?`<div class="mono" style="font-size:20px;font-weight:800">${fmt(p.usd)}</div><div style="color:${p.ch>=0?"var(--green)":"var(--red)"};font-size:12px;font-weight:600;margin-top:3px">${p.ch>=0?"▲":"▼"} ${fmtP(p.ch)}</div>`:`<div style="color:var(--muted);font-size:13px">Sin precio live</div>`}${w.target_price&&p?`<div class="target-box">Target: <span style="color:var(--amber);font-weight:700">${fmt(parseFloat(w.target_price))}</span> <span style="color:${p.usd>=parseFloat(w.target_price)?"var(--green)":"var(--muted)"}">${p.usd>=parseFloat(w.target_price)?"✓ Alcanzado":fmtP(((parseFloat(w.target_price)-p.usd)/p.usd)*100)}</span></div>`:""}</div>`;
+        }).join("")}</div>`;
+
+      const txHTML = state.txs.length === 0 ?
+        `<div class="card empty"><div class="empty-icon">📜</div><div style="color:var(--textSec);font-size:15px;font-weight:600">Sin transacciones aún</div></div>`
+        : `<div class="col gap-6">${state.txs.map(tx => {
+          return `<div class="card" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center"><div class="flex center gap-8"><div style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:${tx.tx_type==="buy"?"var(--greenDim)":"var(--redDim)"};font-size:16px">${tx.tx_type==="buy"?"📥":"📤"}</div><div><div style="font-weight:700;font-size:13px">${tx.tx_type==="buy"?"Compra":"Venta"} — ${tx.symbol||"?"}</div><div style="color:var(--muted);font-size:11px">${parseFloat(tx.quantity).toLocaleString(undefined,{maximumFractionDigits:6})} × ${fmt(parseFloat(tx.price_per_unit))}</div></div></div><div class="text-right"><div class="mono" style="font-weight:700;color:${tx.tx_type==="buy"?"var(--green)":"var(--red)"};font-size:14px">${tx.tx_type==="buy"?"-":"+"} ${fmt(parseFloat(tx.quantity)*parseFloat(tx.price_per_unit))}</div><div style="color:var(--muted);font-size:10px">${new Date(tx.executed_at).toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"})}</div></div></div>`;
+        }).join("")}</div>`;
+
+      return `
+        <div class="header">
+          <div class="flex center" style="gap:10px">
+            <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--blue),var(--purple));display:flex;align-items:center;justify-content:center;font-size:18px">📊</div>
+            <div><div style="font-size:16px;font-weight:800">Portfolio Pro</div><div style="color:var(--muted);font-size:10px">${state.user?.email || ""}</div></div>
+          </div>
+          <div class="flex gap-8">
+            <button class="btn btn-ghost" style="padding:7px 10px" id="refreshBtn">${state.loading?"⏳":"🔄"}</button>
+            <button class="btn btn-ghost" style="padding:7px 10px" id="logoutBtn">🚪</button>
+          </div>
+        </div>
+        <div class="tabs">
+          <button class="tab ${state.tab==="portfolio"?"active":""}" data-tab="portfolio">💼 Portafolio</button>
+          <button class="tab ${state.tab==="watchlist"?"active":""}" data-tab="watchlist">👁 Watchlist</button>
+          <button class="tab ${state.tab==="history"?"active":""}" data-tab="history">📜 Historial</button>
+        </div>
+        <div class="main">
+          ${state.tab==="portfolio"?`
+            <div class="flex gap-12 mb-16 wrap">
+              <div class="card kpi"><div class="kpi-blob" style="background:var(--blue)"></div><div class="kpi-label">Valor Total</div><div class="kpi-val mono blue">${fmt(totVal)}</div>${totPnLP?`<div style="color:${totPnLP>=0?"var(--green)":"var(--red)"};font-size:12px;font-weight:600;margin-top:4px">${totPnLP>=0?"▲":"▼"} ${fmtP(totPnLP)}</div>`:""}</div>
+              <div class="card kpi"><div class="kpi-blob" style="background:${totPnL>=0?"var(--green)":"var(--red)"}"></div><div class="kpi-label">P&L</div><div class="kpi-val mono ${totPnL>=0?"green":"red"}">${fmt(totPnL)}</div></div>
+              <div class="card kpi"><div class="kpi-blob" style="background:var(--purple)"></div><div class="kpi-label">Posiciones</div><div class="kpi-val" style="color:var(--purple)">${state.positions.length}</div></div>
+              <div class="card kpi"><div class="kpi-blob" style="background:var(--amber)"></div><div class="kpi-label">Perfil</div><div class="kpi-val" style="color:var(--amber);font-size:16px">${state.profile?.risk_profile||"moderado"}</div></div>
+            </div>
+            <div class="flex between center mb-12">
+              <div style="font-size:15px;font-weight:700">Mis Posiciones</div>
+              <button class="btn btn-primary" style="padding:7px 14px;font-size:12px" id="openTx">+ Transacción</button>
+            </div>
+            <div class="col gap-8">${posHTML}</div>
+          `:""}
+          ${state.tab==="watchlist"?`
+            <div class="flex between center mb-12">
+              <div style="font-size:15px;font-weight:700">⭐ Watchlist</div>
+              <button class="btn btn-primary" style="padding:7px 14px;font-size:12px" id="openWatch">+ Agregar</button>
+            </div>
+            ${watchHTML}
+          `:""}
+          ${state.tab==="history"?`
+            <div style="font-size:15px;font-weight:700;margin-bottom:12px">📜 Historial</div>
+            ${txHTML}
+          `:""}
+        </div>
+        <div style="padding:16px 20px;text-align:center;border-top:1px solid var(--border);margin-top:30px">
+          <div style="color:var(--muted);font-size:10px">Precios live vía CoinGecko · DB: Supabase · No es asesoría financiera</div>
+        </div>
+        ${state.modal ? modalHTML() : ""}
+      `;
+    }
+
+    function modalHTML() {
+      const isTx = state.modal === "tx";
+      const filtered = ASSETS.filter(a => a.s.toLowerCase().includes(state.search.toLowerCase()) || a.n.toLowerCase().includes(state.search.toLowerCase()));
+      const lp = state.selAsset ? state.prices[state.selAsset.id]?.usd : null;
+
+      return `<div class="modal-overlay" id="modalOverlay"><div class="modal"><div class="flex between center" style="margin-bottom:18px"><div style="font-size:17px;font-weight:700">${isTx?"Nueva Transacción":"Agregar a Watchlist"}</div><button style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:4px" id="closeModal">✕</button></div>
+      ${isTx?`<div class="flex gap-8 mb-14"><button class="tx-toggle" id="togBuy" style="border:1px solid ${state.txType==="buy"?"var(--green)":"var(--border)"};background:${state.txType==="buy"?"var(--greenDim)":"transparent"};color:${state.txType==="buy"?"var(--green)":"var(--muted)"}">COMPRAR</button><button class="tx-toggle" id="togSell" style="border:1px solid ${state.txType==="sell"?"var(--red)":"var(--border)"};background:${state.txType==="sell"?"var(--redDim)":"transparent"};color:${state.txType==="sell"?"var(--red)":"var(--muted)"}">VENDER</button></div>`:""}
+      <div class="field"><label>Buscar Activo</label><input id="modalSearch" placeholder="BTC, AAPL, VOO..." value="${state.search}"></div>
+      ${state.search && !state.selAsset ? `<div style="max-height:160px;overflow-y:auto;margin-bottom:14px;border:1px solid var(--border);border-radius:8px">${filtered.slice(0,8).map(a=>`<div class="asset-row" data-select="${a.id}"><div><span style="color:var(--text);font-weight:700;font-size:13px">${a.s}</span><span style="color:var(--muted);font-size:12px;margin-left:8px">${a.n}</span></div><span class="badge">${a.t}</span></div>`).join("")}${filtered.length===0?`<div style="padding:14px;color:var(--muted);font-size:13px;text-align:center">Sin resultados</div>`:""}</div>`:""}
+      ${state.selAsset?`<div class="selected-asset"><div><span style="font-weight:700">${state.selAsset.s}</span><span style="color:var(--muted);font-size:12px;margin-left:8px">${state.selAsset.n}</span></div><div class="flex center gap-8">${lp?`<span style="color:var(--green);font-size:13px">Live: ${fmt(lp)}</span>`:""}<button style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px" id="clearAsset">✕</button></div></div>`:""}
+      ${isTx?`<div class="flex gap-8"><div style="flex:1" class="field"><label>Cantidad</label><input id="modalQty" type="number" step="any" placeholder="0.00" value="${state.qty}"></div><div style="flex:1" class="field"><label>Precio USD</label><input id="modalPrice" type="number" step="any" placeholder="0.00" value="${state.price}"></div></div>${state.qty&&state.price?`<div class="total-box"><div style="color:var(--muted);font-size:11px">TOTAL</div><div class="mono" style="font-size:20px;font-weight:800">${fmt(parseFloat(state.qty||0)*parseFloat(state.price||0))}</div></div>`:""}<button class="btn ${state.txType==="buy"?"btn-success":"btn-danger"}" id="saveTx" style="width:100%;justify-content:center;padding:12px" ${!state.selAsset||!state.qty||!state.price?"disabled":""}>${state.txType==="buy"?"✓ Confirmar Compra":"✓ Confirmar Venta"}</button>`:`<div class="field"><label>Precio objetivo (opcional)</label><input id="modalTarget" type="number" step="any" placeholder="USD target" value="${state.watchTarget}"></div><button class="btn btn-primary" id="saveWatch" style="width:100%;justify-content:center;padding:12px" ${!state.selAsset?"disabled":""}>⭐ Agregar a Watchlist</button>`}
+      </div></div>`;
+    }
+
+    // ─── Bindings ───
+    function bindAuth() {
+      document.getElementById("authEmail")?.addEventListener("input", e => state.authEmail = e.target.value);
+      document.getElementById("authPass")?.addEventListener("input", e => state.authPass = e.target.value);
+      document.getElementById("authName")?.addEventListener("input", e => state.authName = e.target.value);
+      document.getElementById("authPass")?.addEventListener("keydown", e => { if(e.key==="Enter") handleAuth(); });
+      document.getElementById("authBtn")?.addEventListener("click", handleAuth);
+      document.getElementById("authToggle")?.addEventListener("click", () => setState({ authMode: state.authMode==="login"?"signup":"login", authError: "", authSuccess: "" }));
+    }
+
+    function bindDashboard() {
+      document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => setState({ tab: b.dataset.tab })));
+      document.getElementById("refreshBtn")?.addEventListener("click", () => fetchPrices(true));
+      document.getElementById("logoutBtn")?.addEventListener("click", logout);
+      document.getElementById("openTx")?.addEventListener("click", () => setState({ modal: "tx" }));
+      document.getElementById("openWatch")?.addEventListener("click", () => setState({ modal: "watch" }));
+      document.querySelectorAll("[data-rmpos]").forEach(b => b.addEventListener("click", () => removePosition(b.dataset.rmpos)));
+      document.querySelectorAll("[data-rmwatch]").forEach(b => b.addEventListener("click", () => removeWatch(b.dataset.rmwatch)));
+
+      // Modal bindings
+      document.getElementById("modalOverlay")?.addEventListener("click", e => { if(e.target.id==="modalOverlay") closeModal(); });
+      document.getElementById("closeModal")?.addEventListener("click", closeModal);
+      document.getElementById("togBuy")?.addEventListener("click", () => setState({ txType: "buy" }));
+      document.getElementById("togSell")?.addEventListener("click", () => setState({ txType: "sell" }));
+      document.getElementById("modalSearch")?.addEventListener("input", e => { state.search = e.target.value; render(); });
+      document.querySelectorAll("[data-select]").forEach(b => b.addEventListener("click", () => {
+        const a = ASSETS.find(x=>x.id===b.dataset.select);
+        state.selAsset = a; state.search = "";
+        if(a && state.prices[a.id]) state.price = state.prices[a.id].usd.toString();
+        render();
+      }));
+      document.getElementById("clearAsset")?.addEventListener("click", () => { state.selAsset = null; state.price = ""; render(); });
+      document.getElementById("modalQty")?.addEventListener("input", e => state.qty = e.target.value);
+      document.getElementById("modalPrice")?.addEventListener("input", e => state.price = e.target.value);
+      document.getElementById("modalTarget")?.addEventListener("input", e => state.watchTarget = e.target.value);
+      document.getElementById("saveTx")?.addEventListener("click", saveTx);
+      document.getElementById("saveWatch")?.addEventListener("click", addToWatchlist);
+    }
+
+    // ─── Init ───
+    checkSession();
+  </script>
+</body>
+</html>
